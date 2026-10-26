@@ -4,9 +4,13 @@ import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,s
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
-const auth=new GoogleAuth({scopes:['https://www.googleapis.com/auth/spreadsheets.readonly']});
+function googleAuth() {
+  const raw=process.env.GOOGLE_CREDENTIALS_JSON;
+  const credentials=raw ? JSON.parse(raw) : undefined;
+  return new GoogleAuth({credentials,scopes:['https://www.googleapis.com/auth/spreadsheets.readonly']});
+}
 async function getRows(range) {
-  const client=await auth.getClient();
+  const client=await googleAuth().getClient();
   const token=await client.getAccessToken();
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}`;
   const res=await fetch(url,{headers:{Authorization:`Bearer ${token.token}`},signal:AbortSignal.timeout(2500)});
@@ -52,6 +56,12 @@ const server=http.createServer(async (request,response)=>{
 });
 if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||8080));
 export async function handler(event) {
-  const payload=typeof event.body==='string'?JSON.parse(event.body):event.body;
-  return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(await handle(payload))};
+  try {
+    const payload=typeof event.body==='string'?JSON.parse(event.body):event.body;
+    if(!payload || typeof payload!=='object') throw new Error('Invalid payload');
+    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(await handle(payload))};
+  } catch(error) {
+    console.error('Invalid request:',error.message);
+    return {statusCode:400,body:'Bad Request'};
+  }
 }
