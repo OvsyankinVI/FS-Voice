@@ -2,7 +2,7 @@ import http from 'node:http';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
 import {GoogleAuth} from 'google-auth-library';
-import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand} from './core.js';
+import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand,parseFoodBatch} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -51,28 +51,62 @@ export async function handle(req) {
   const phrase=req?.request?.original_utterance||'';
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   try {
-    const awaiting=req?.state?.session?.fs_recipient_question;
-    if(awaiting?.version===1 && awaiting.alice_user_id===id && /^(нет|отмена|отмени)$/i.test(phrase.trim()))return aliceResponse(req,'Отменил.');
-    if(awaiting?.version===1 && awaiting.alice_user_id===id && awaiting.food?.status==='parsed'){
-      const members=await fitnessTools.listFamilyMembers(id);
-      const matches=members.filter(m=>{const n=m.display_name.toLocaleLowerCase('ru');const p=phrase.toLocaleLowerCase('ru');return n.startsWith('ангелин')?p.includes('ангелин'):n.startsWith('влад')?p.includes('влад'):p.includes(n);});
-      if(matches.length===1){const food=await fitnessTools.searchFoods(awaiting.food.name);if(food.length!==1)return aliceResponse(req,'Уточни название продукта, найдено вариантов: '+food.length+'. Запись не создана.');return aliceResponse(req,'Для '+matches[0].display_name+' нашёл '+food[0].name+', '+awaiting.food.grams+' граммов. Подтверди словом да или отмени.',false,{fs_pending:{version:1,alice_user_id:id,owner_id:matches[0].owner_id,entry_key:randomUUID(),fdc_id:food[0].fdc_id,grams:awaiting.food.grams,meal:awaiting.food.meal||'перекус'}});}
-      return aliceResponse(req,'Назови одного получателя: '+members.map(m=>m.display_name).join(' или ')+'.',false,{fs_recipient_question:awaiting});
+    const members=await fitnessTools.listFamilyMembers(id);
+    const state=req?.state?.session||{};
+    const recipientOf=(utterance)=>members.filter(m=>{
+      const name=m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е');
+      const stem=name.startsWith('ангелин')?'ангелин':name.startsWith('влад')?'влад':name;
+      return utterance.toLocaleLowerCase('ru').replace(/ё/g,'е').includes(stem);
+    });
+    const resolveItems=async(ownerId,items)=>{
+      const selected=[];
+      for(const item of items){
+        const name=item.name.replace(/^(?:владу|владиславу|ангелине|ангелину)\s+/i,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/i,'').trim();
+        const personal=await fitnessTools.searchPersonalFoods(ownerId,name);
+        const found=personal.length?personal:await fitnessTools.searchFoods(name);
+        if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
+        if(found.length>1)return {error:'Для «'+name+'» нашёл несколько вариантов: '+found.slice(0,3).map(x=>x.name).join(', ')+'. Уточни название. Ничего не записано.'};
+        const f=found[0];
+        selected.push({kind:f.kind,product_id:f.product_id,fdc_id:f.fdc_id,grams:item.grams,meal:({завтрак:'Завтрак',обед:'Обед',ужин:'Ужин',перекус:'Перекус'})[item.meal]||'Перекус',entry_key:randomUUID(),name:f.name});
+      }
+      return {selected};
+    };
+    const prepare=async(owner,items)=>{
+      const result=await resolveItems(owner.owner_id,items);
+      if(result.error)return aliceResponse(req,result.error);
+      const summary=result.selected.map(x=>x.name+' '+x.grams+' граммов').join(', ');
+      return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
+    };
+    const question=state.fs_batch_recipient;
+    if(question?.version===1&&question.alice_user_id===id){
+      if(/^(нет|отмена|отмени)$/i.test(phrase.trim()))return aliceResponse(req,'Отменил.');
+      const chosen=recipientOf(phrase);
+      if(chosen.length===1)return prepare(chosen[0],question.items);
+      return aliceResponse(req,'Кому записать: '+members.map(m=>m.display_name).join(' или ')+'?',false,{fs_batch_recipient:question});
     }
-    const pending=req?.state?.session?.fs_pending;
-    if(pending && pending.alice_user_id===id && pending.version===1){
-      if(/^(нет|отмена|отмени)$/i.test(phrase.trim()))return aliceResponse(req,'Хорошо, отменил.');
+    const pending=state.fs_batch_pending;
+    if(pending?.version===1&&pending.alice_user_id===id){
+      if(/^(нет|отмена|отмени)$/i.test(phrase.trim()))return aliceResponse(req,'Отменил.');
       if(/^(да|подтверждаю|верно)$/i.test(phrase.trim())){
-        const members=await fitnessTools.listFamilyMembers(id);
-        if(!members.some(m=>m.owner_id===pending.owner_id))return aliceResponse(req,'Этот дневник больше не доступен. Ничего не записано.');
-        if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись пока выключена в настройках сервера. Ничего не добавлено.');
-        const meal={завтрак:'Завтрак',обед:'Обед',ужин:'Ужин',перекус:'Перекус'}[pending.meal]||'Перекус';
-        if(!Number.isSafeInteger(Number(pending.fdc_id))||!Number.isFinite(Number(pending.grams))||Number(pending.grams)<=0||Number(pending.grams)>10000||!/^[0-9a-f-]{36}$/i.test(String(pending.entry_key)))return aliceResponse(req,'Данные подтверждения повреждены. Ничего не добавлено.');
-        const saved=await fitnessTools.saveVoiceUsda({ownerId:pending.owner_id,fdcId:pending.fdc_id,grams:pending.grams,meal,entryKey:pending.entry_key});
-        return aliceResponse(req,saved?'Готово! Добавил продукт в дневник.':'Не удалось сохранить запись.');
+        if(!members.some(m=>m.owner_id===pending.owner_id))return aliceResponse(req,'Дневник больше недоступен. Ничего не добавлено.');
+        if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
+        const items=pending.items;
+        if(!Array.isArray(items)||items.length<1||items.length>10||items.some(x=>!['usda','personal'].includes(x.kind)||!Number.isFinite(Number(x.grams))||Number(x.grams)<=0||Number(x.grams)>10000||!/^[0-9a-f-]{36}$/i.test(String(x.entry_key))))return aliceResponse(req,'Ошибка подтверждения. Ничего не добавлено.');
+        const ids=await fitnessTools.saveVoiceBatch({ownerId:pending.owner_id,items});
+        return aliceResponse(req,Array.isArray(ids)&&ids.length===items.length?'Готово! Добавил '+ids.length+' продуктов в дневник.':'Не удалось подтвердить сохранение.');
       }
     }
-    const foodCommand=parseFoodCommand(phrase);if(foodCommand){if(foodCommand.status==='missing_amount')return aliceResponse(req,'Скажи название продукта и количество в граммах.');if(foodCommand.status==='invalid_amount')return aliceResponse(req,'Укажи массу продукта от одного до десяти тысяч граммов.');if(foodCommand.status==='missing_product')return aliceResponse(req,'Не расслышал название продукта. Повтори, пожалуйста.');const members=await fitnessTools.listFamilyMembers(id);if(!members.length)return aliceResponse(req,'В FS пока нет доступных голосовых профилей. Заполни имя в профиле FS.');const lower=phrase.toLocaleLowerCase('ru');const recipients=members.filter(m=>{const name=m.display_name.toLocaleLowerCase('ru');const stem=name.startsWith('ангелин')?'ангелин':name.startsWith('влад')?'влад':name;return lower.includes(stem);});if(recipients.length!==1 && !(members.length===1 && recipients.length===0))return aliceResponse(req,recipients.length?'Уточни одного получателя: '+members.map(m=>m.display_name).join(' или ')+'.':'Кому записать: '+members.map(m=>m.display_name).join(' или ')+'?',false,{fs_recipient_question:{version:1,alice_user_id:id,food:foodCommand}});const cleanName=foodCommand.name.replace(/^(?:владу|владиславу|ангелине|ангелину)\s+/i,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/i,'').trim();const matches=await fitnessTools.searchFoods(cleanName);if(!matches.length)return aliceResponse(req,'Не нашёл продукт «'+foodCommand.name+'» в каталоге. Попробуй уточнить название.');if(matches.length>1)return aliceResponse(req,'Нашёл несколько вариантов: '+matches.slice(0,3).map((x,i)=>(i+1)+': '+x.name+(x.detail?' — '+x.detail:'')).join('; ')+'. Уточни продукт. Запись пока не создана.');return aliceResponse(req,'Для '+(recipients[0]||members[0]).display_name+' нашёл '+matches[0].name+', '+foodCommand.grams+' граммов'+(foodCommand.meal?', '+foodCommand.meal:'')+'. Подтверди выбор словом да или отмени.',false,{fs_pending:{version:1,alice_user_id:id,entry_key:randomUUID(),owner_id:(recipients[0]||members[0]).owner_id,fdc_id:matches[0].fdc_id,grams:foodCommand.grams,meal:foodCommand.meal||'перекус'}})}const day=todayMoscow();
+    const command=parseFoodBatch(phrase);
+    if(command){
+      if(command.status!=='parsed')return aliceResponse(req,command.status==='too_many'?'За один раз можно добавить не больше десяти продуктов.':command.status==='missing_amount'?'Укажи массу каждого продукта в граммах.':'Проверь название и массу продуктов.');
+      if(!members.length)return aliceResponse(req,'В FS нет доступных голосовых профилей.');
+      const chosen=recipientOf(phrase);
+      if(chosen.length>1)return aliceResponse(req,'Назови одного получателя.');
+      if(chosen.length===1)return prepare(chosen[0],command.items);
+      if(members.length===1)return prepare(members[0],command.items);
+      return aliceResponse(req,'Кому записать: '+members.map(m=>m.display_name).join(' или ')+'?',false,{fs_batch_recipient:{version:1,alice_user_id:id,items:command.items}});
+    }
+    const day=todayMoscow();
     if(process.env.FITNESS_DATA_SOURCE==='supabase') {
       const nutrition=await fitnessTools.getTodayNutrition(day).catch(error=>{console.error('Supabase nutrition read failed:',error?.message||String(error));throw new Error('nutrition_read_failed');});
       const targets=await fitnessTools.getTargets().catch(error=>{console.error('Supabase targets read failed:',error?.message||String(error));throw new Error('targets_read_failed');});
