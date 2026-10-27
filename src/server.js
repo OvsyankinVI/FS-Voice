@@ -76,8 +76,42 @@ const server=http.createServer(async (request,response)=>{
   }catch(e){response.writeHead(400);response.end();}
 });
 if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||8080));
+// Diagnostic output is available only to a deliberately crafted cloud-console test
+// with the webhook secret AND a separate private diagnostic secret.
+function diagnosticError(error) {
+  const message=String(error?.message||'');
+  const match=message.match(/HTTP\\s+(\\d{3})/);
+  if(match) return 'HTTP '+match[1];
+  if(error?.name==='TimeoutError'||error?.name==='AbortError') return 'timeout';
+  if(message==='Supabase is not configured') return 'missing_supabase_configuration';
+  return 'connection_or_response_error';
+}
+function matchesDiagnosticSecret(candidate,secret) {
+  if(typeof candidate!=='string'||!candidate) return false;
+  const a=Buffer.from(candidate),b=Buffer.from(secret);
+  return a.length===b.length && timingSafeEqual(a,b);
+}
+async function diagnoseSupabase() {
+  const result={nutrition:'not_checked',targets:'not_checked'};
+  const day=todayMoscow();
+  for(const [name,operation] of [
+    ['nutrition',()=>fitnessTools.getTodayNutrition(day)],
+    ['targets',()=>fitnessTools.getTargets()]
+  ]) {
+    try {await operation();result[name]='ok';}
+    catch(error) {result[name]=diagnosticError(error);}
+  }
+  return result;
+}
 export async function handler(event) {
   if(!verifyWebhook(event)) return {statusCode:403,body:'Forbidden'};
+  const diagnosticSecret=process.env.JARVIS_DIAGNOSTIC_SECRET;
+  const diagnosticRequested=event?.queryStringParameters?.diagnostic==='supabase';
+  if(diagnosticRequested) {
+    if(!diagnosticSecret || !matchesDiagnosticSecret(event?.queryStringParameters?.diagnostic_key,diagnosticSecret)) return {statusCode:403,body:'Forbidden'};
+    const result=await diagnoseSupabase();
+    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(result)};
+  }
   try {
     const rawBody=event.isBase64Encoded && typeof event.body==='string' ? Buffer.from(event.body,'base64').toString('utf8') : event.body;
     const payload=typeof rawBody==='string'?JSON.parse(rawBody):rawBody;
