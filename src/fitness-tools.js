@@ -30,6 +30,10 @@ async function rpc(schema,fn,payload) {
 }
 export const fitnessTools = Object.freeze({
 
+  saveVoiceUsda({ownerId,fdcId,grams,meal,entryKey}) {
+    if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
+    return rpc('fitness','voice_add_usda',{p_owner:ownerId,p_fdc:fdcId,p_grams:grams,p_meal:meal,p_key:entryKey});
+  },
   redeemAliceCode(code,aliceUserId) { return rpc('fitness','redeem_alice_link_code',{p_code:code,p_alice_user_id:aliceUserId}); },
   async listFamilyMembers(aliceUserId) {
     if(!aliceUserId)return [];
