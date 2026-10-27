@@ -80,10 +80,15 @@ if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||808
 // with the webhook secret AND a separate private diagnostic secret.
 function diagnosticError(error) {
   const message=String(error?.message||'');
-  const match=message.match(/HTTP\\s+(\\d{3})/);
-  if(match) return 'HTTP '+match[1];
+  const httpCode=message.match(/HTTP\s+(\d{3})/);
+  if(httpCode) return 'HTTP '+httpCode[1];
   if(error?.name==='TimeoutError'||error?.name==='AbortError') return 'timeout';
   if(message==='Supabase is not configured') return 'missing_supabase_configuration';
+  if(error?.name==='SyntaxError') return 'invalid_json_response';
+  const causeCode=String(error?.cause?.code||'');
+  const allowedCodes=new Set(['ENOTFOUND','EAI_AGAIN','ECONNREFUSED','ECONNRESET','ETIMEDOUT','ENETUNREACH','EHOSTUNREACH','CERT_HAS_EXPIRED','UNABLE_TO_VERIFY_LEAF_SIGNATURE']);
+  if(allowedCodes.has(causeCode)) return 'network_'+causeCode;
+  if(error?.name==='TypeError' && /fetch failed/i.test(message)) return 'network_fetch_failed';
   return 'connection_or_response_error';
 }
 function matchesDiagnosticSecret(candidate,secret) {
