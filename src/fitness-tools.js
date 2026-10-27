@@ -25,13 +25,11 @@ export const fitnessTools = Object.freeze({
   async searchFoods(query) {
     const q=String(query||'').trim().replace(/[%*,()]/g,' ');
     if(q.length<2)return [];
-    const [personal,aliases,english]=await Promise.all([
-      select('fitness','products',{select:'id,name,serving_basis,kcal,protein_g,fat_g,carbs_g',name:'ilike.*'+q+'*',limit:'5'}),
+    const [aliases,english]=await Promise.all([
       select('fitness','food_search_terms',{select:'term_ru,usda_foods(fdc_id,name_en,name_ru,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g)',term_ru:'ilike.*'+q+'*',limit:'10'}),
       select('fitness','usda_foods',{select:'fdc_id,name_en,name_ru,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g',name_en:'ilike.*'+q+'*',limit:'8'})
     ]);
     const result=[],seen=new Set();
-    for(const x of personal){const key='p:'+x.id;if(seen.has(key))continue;seen.add(key);result.push({kind:'personal',id:x.id,name:x.name,serving_basis:x.serving_basis});}
     for(const row of aliases){const x=row.usda_foods;if(!x)continue;const key='u:'+x.fdc_id;if(seen.has(key))continue;seen.add(key);result.push({kind:'usda',fdc_id:x.fdc_id,name:row.term_ru,detail:x.name_en});}
     for(const x of english){const key='u:'+x.fdc_id;if(seen.has(key))continue;seen.add(key);result.push({kind:'usda',fdc_id:x.fdc_id,name:x.name_ru||x.name_en,detail:x.name_en});}
     return result.slice(0,10);
