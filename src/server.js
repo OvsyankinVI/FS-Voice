@@ -1,5 +1,5 @@
 import http from 'node:http';
-import {timingSafeEqual} from 'node:crypto';
+import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
 import {GoogleAuth} from 'google-auth-library';
 import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand} from './core.js';
@@ -38,9 +38,12 @@ async function loadTargets() {
   if(!response.ok) throw new Error('Targets unavailable');
   return targetsFromSite(await response.json());
 }
-function aliceResponse(req,text,endSession=false) {
-  return {version:req.version||'1.0',session:req.session, response:{text,tts:text,end_session:endSession}};
+function aliceResponse(req,text,endSession=false,state=null) {
+  const answer={version:req.version||'1.0',session:req.session,response:{text,tts:text,end_session:endSession}};
+  if(state)answer.session_state=state;
+  return answer;
 }
+
 export async function handle(req) {
   const id=req?.session?.user?.user_id || req?.session?.user_id;
   if(!allowed.length || !id || !allowed.includes(id))
@@ -48,7 +51,12 @@ export async function handle(req) {
   const phrase=req?.request?.original_utterance||'';
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   try {
-    const foodCommand=parseFoodCommand(phrase);if(foodCommand){if(foodCommand.status==='missing_amount')return aliceResponse(req,'Скажи название продукта и количество в граммах.');if(foodCommand.status==='invalid_amount')return aliceResponse(req,'Укажи массу продукта от одного до десяти тысяч граммов.');if(foodCommand.status==='missing_product')return aliceResponse(req,'Не расслышал название продукта. Повтори, пожалуйста.');const owner=await fitnessTools.resolveAliceOwner(id);if(!owner)return aliceResponse(req,'Для добавления питания сначала нужно привязать аккаунт Алисы к дневнику FS. Пока ничего не записано.');const matches=await fitnessTools.searchFoods(foodCommand.name);if(!matches.length)return aliceResponse(req,'Не нашёл продукт «'+foodCommand.name+'» в каталоге. Попробуй уточнить название.');if(matches.length>1)return aliceResponse(req,'Нашёл несколько вариантов: '+matches.slice(0,3).map((x,i)=>(i+1)+': '+x.name+(x.detail?' — '+x.detail:'')).join('; ')+'. Уточни продукт. Запись пока не создана.');return aliceResponse(req,'Нашёл '+matches[0].name+', '+foodCommand.grams+' граммов'+(foodCommand.meal?', '+foodCommand.meal:'')+'. Для сохранения потребуется подтверждение после подключения безопасной авторизации. Пока запись не создана.')}const day=todayMoscow();
+    const pending=req?.state?.session?.fs_pending;
+    if(pending && pending.alice_user_id===id && pending.version===1){
+      if(/^(нет|отмена|отмени)$/i.test(phrase.trim()))return aliceResponse(req,'Хорошо, отменил.');
+      if(/^(да|подтверждаю|верно)$/i.test(phrase.trim()))return aliceResponse(req,'Подтверждение принято. Сохранение в дневник пока отключено до завершения привязки и проверки прав.');
+    }
+    const foodCommand=parseFoodCommand(phrase);if(foodCommand){if(foodCommand.status==='missing_amount')return aliceResponse(req,'Скажи название продукта и количество в граммах.');if(foodCommand.status==='invalid_amount')return aliceResponse(req,'Укажи массу продукта от одного до десяти тысяч граммов.');if(foodCommand.status==='missing_product')return aliceResponse(req,'Не расслышал название продукта. Повтори, пожалуйста.');const owner=await fitnessTools.resolveAliceOwner(id);if(!owner)return aliceResponse(req,'Для добавления питания сначала нужно привязать аккаунт Алисы к дневнику FS. Пока ничего не записано.');const matches=await fitnessTools.searchFoods(foodCommand.name);if(!matches.length)return aliceResponse(req,'Не нашёл продукт «'+foodCommand.name+'» в каталоге. Попробуй уточнить название.');if(matches.length>1)return aliceResponse(req,'Нашёл несколько вариантов: '+matches.slice(0,3).map((x,i)=>(i+1)+': '+x.name+(x.detail?' — '+x.detail:'')).join('; ')+'. Уточни продукт. Запись пока не создана.');return aliceResponse(req,'Нашёл '+matches[0].name+', '+foodCommand.grams+' граммов'+(foodCommand.meal?', '+foodCommand.meal:'')+'. Подтверди выбор словом да или отмени. Пока запись не создаётся.',false,{fs_pending:{version:1,alice_user_id:id,entry_key:randomUUID(),fdc_id:matches[0].fdc_id,grams:foodCommand.grams,meal:foodCommand.meal||'перекус'}})}const day=todayMoscow();
     if(process.env.FITNESS_DATA_SOURCE==='supabase') {
       const nutrition=await fitnessTools.getTodayNutrition(day).catch(error=>{console.error('Supabase nutrition read failed:',error?.message||String(error));throw new Error('nutrition_read_failed');});
       const targets=await fitnessTools.getTargets().catch(error=>{console.error('Supabase targets read failed:',error?.message||String(error));throw new Error('targets_read_failed');});
