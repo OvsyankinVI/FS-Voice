@@ -67,3 +67,21 @@ export function speak(result,targets,kind) {
   return diff>0 ? `Сегодня ${labels[kind]}: ${used} ${units[kind]}. Превышение на ${round(diff)}.` :
     `Сегодня ${labels[kind]}: ${used} ${units[kind]}. Осталось ${round(Math.max(0,-diff))}.`;
 }
+
+export function parseFoodCommand(input) {
+  const raw=String(input??'').trim().toLowerCase().replace(/ё/g,'е');
+  const match=raw.match(/(?:запиши|добавь|съел|съела|ел|ела)\s+(.+?)\s*$/i);
+  if(!match)return null;
+  let text=match[1].replace(/^(?:мне|в дневник|в питание)\s+/,'');
+  const quantity=text.match(/(\d+(?:[.,]\d+)?)\s*(килограмм(?:а|ов)?|кг|грамм(?:а|ов)?|гр|г)\b/);
+  if(!quantity)return {status:'missing_amount'};
+  let grams=Number(quantity[1].replace(',','.'))*(quantity[2].startsWith('к')?1000:1);
+  if(!Number.isFinite(grams)||grams<=0||grams>10000)return {status:'invalid_amount'};
+  let meal=null;
+  const mealMatch=text.match(/(?:на|в качестве)\s+(завтрак|обед|ужин|перекус)\b/);
+  if(mealMatch)meal=mealMatch[1];
+  text=text.replace(quantity[0],' ').replace(/(?:на|в качестве)\s+(?:завтрак|обед|ужин|перекус)\b/,' ').replace(/\s+/g,' ').trim();
+  text=text.replace(/^(?:из|по|с)\s+/,'').trim();
+  if(text.length<2)return {status:'missing_product'};
+  return {status:'parsed',name:text,grams,meal};
+}
