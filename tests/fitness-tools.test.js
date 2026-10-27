@@ -39,3 +39,12 @@ test('HTTP failure is not silently swallowed',async()=>{
   await assert.rejects(fitnessTools.getTodayNutrition('2026-10-27'),/HTTP 403/);
 });
 test.after(()=>{globalThis.fetch=oldFetch;if(oldUrl===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=oldUrl;if(oldKey===undefined)delete process.env.SUPABASE_SECRET_KEY;else process.env.SUPABASE_SECRET_KEY=oldKey;});
+
+test('Supabase nutrition targets read from private dashboard config',async()=>{
+  mock([{config:{target:{kcal:[2370,2370],protein:[190,190],fat:[70,70],carbs:[245,245]}}}]);
+  assert.deepEqual(await fitnessTools.getTargets(),{kcal:2370,protein:190,fat:70,carbs:245});
+});
+test('Supabase targets reject missing config',async()=>{
+  mock([]);
+  await assert.rejects(fitnessTools.getTargets(),/Expected exactly one/);
+});
