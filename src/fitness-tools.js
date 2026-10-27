@@ -33,7 +33,9 @@ export const fitnessTools = Object.freeze({
   redeemAliceCode(code,aliceUserId) { return rpc('fitness','redeem_alice_link_code',{p_code:code,p_alice_user_id:aliceUserId}); },
   async listFamilyMembers(aliceUserId) {
     if(!aliceUserId)return [];
-    return select('fitness','voice_profiles',{select:'owner_id,display_name',enabled:'eq.true',order:'display_name.asc',limit:'20'});
+    const owners=(process.env.FS_VOICE_OWNER_IDS||'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2').split(',').map(v=>v.trim()).filter(v=>/^[0-9a-f-]{36}$/i.test(v));
+    if(!owners.length)return [];
+    return select('fitness','voice_profiles',{select:'owner_id,display_name',owner_id:'in.('+owners.join(',')+')',enabled:'eq.true',order:'display_name.asc',limit:'20'});
   },
   async resolveAliceOwner(aliceUserId) {
     if(!aliceUserId)return null;
