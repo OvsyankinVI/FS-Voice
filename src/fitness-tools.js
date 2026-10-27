@@ -21,6 +21,14 @@ async function select(schema, table, params = {}) {
   return res.json();
 }
 export const fitnessTools = Object.freeze({
+  async getTargets() {
+    const rows = await select('fitness', 'dashboard_config', {select: 'config', limit: '2'});
+    if (rows.length !== 1) throw new Error('Expected exactly one dashboard configuration');
+    const t = rows[0]?.config?.target;
+    const keys = ['kcal','protein','fat','carbs'];
+    if (!t || !keys.every(k => Number(Array.isArray(t[k]) ? t[k][0] : t[k]) > 0)) throw new Error('Invalid nutrition targets');
+    return Object.fromEntries(keys.map(k => [k, Number(Array.isArray(t[k]) ? t[k][0] : t[k])]));
+  },
   async getTodayNutrition(day) {
     const rows = await select('fitness', 'daily_summaries', {day: 'eq.' + day, select: 'day,kcal,protein_g,fat_g,carbs_g', limit: '2'});
     if (!rows.length) return {status: 'missing_day', date: day};
