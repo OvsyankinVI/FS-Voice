@@ -20,8 +20,17 @@ async function select(schema, table, params = {}) {
   if (!res.ok) throw new Error('Supabase ' + schema + '.' + table + ' HTTP ' + res.status);
   return res.json();
 }
+async function rpc(schema,fn,payload) {
+  const {base,key}=credentials();
+  const headers={apikey:key,'Content-Profile':schema,'Accept-Profile':schema,'Content-Type':'application/json',Accept:'application/json'};
+  if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
+  const res=await fetch(new URL('/rest/v1/rpc/'+fn,base),{method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(3500)});
+  if(!res.ok)throw new Error('Supabase RPC '+fn+' HTTP '+res.status);
+  return res.json();
+}
 export const fitnessTools = Object.freeze({
 
+  redeemAliceCode(code,aliceUserId) { return rpc('fitness','redeem_alice_link_code',{p_code:code,p_alice_user_id:aliceUserId}); },
   async resolveAliceOwner(aliceUserId) {
     if(!aliceUserId)return null;
     const rows=await select('fitness','alice_identity_links',{select:'owner_id',alice_user_id:'eq.'+String(aliceUserId),limit:'2'});
