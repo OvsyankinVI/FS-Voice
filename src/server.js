@@ -1,9 +1,21 @@
 import http from 'node:http';
+import {timingSafeEqual} from 'node:crypto';
 import {GoogleAuth} from 'google-auth-library';
 import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
+const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
+function matchesSecret(candidate) {
+  if(!webhookSecret || typeof candidate!=='string') return false;
+  const expected=Buffer.from(webhookSecret), actual=Buffer.from(candidate);
+  return expected.length===actual.length && timingSafeEqual(expected,actual);
+}
+function verifyWebhook(event) {
+  const query=event?.queryStringParameters||{};
+  const supplied=query.key||query.token||'';
+  return matchesSecret(supplied);
+}
 function googleAuth() {
   const raw=process.env.GOOGLE_CREDENTIALS_JSON;
   const credentials=raw ? JSON.parse(raw) : undefined;
@@ -44,7 +56,9 @@ export async function handle(req) {
   }
 }
 const server=http.createServer(async (request,response)=>{
-  if(request.method!=='POST'||request.url!=='/alice') {response.writeHead(404);return response.end();}
+  const url=new URL(request.url,'http://localhost');
+  if(request.method!=='POST'||url.pathname!=='/alice') {response.writeHead(404);return response.end();}
+  if(!matchesSecret(url.searchParams.get('key'))) {response.writeHead(403);return response.end('Forbidden');}
   let raw='';
   for await(const chunk of request){raw+=chunk;if(raw.length>100000){response.writeHead(413);return response.end();}}
   try {
@@ -56,6 +70,7 @@ const server=http.createServer(async (request,response)=>{
 });
 if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||8080));
 export async function handler(event) {
+  if(!verifyWebhook(event)) return {statusCode:403,body:'Forbidden'};
   try {
     const payload=typeof event.body==='string'?JSON.parse(event.body):event.body;
     if(!payload || typeof payload!=='object') throw new Error('Invalid payload');
