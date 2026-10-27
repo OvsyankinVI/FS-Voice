@@ -10,8 +10,11 @@ async function select(schema, table, params = {}) {
   const {base, key} = credentials();
   const url = new URL('/rest/v1/' + table, base);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
+  // Opaque sb_secret_* keys belong in apikey, not in a Bearer JWT header.
+  const headers = {apikey: key, 'Accept-Profile': schema, Accept: 'application/json'};
+  if (!key.startsWith('sb_secret_')) headers.Authorization = 'Bearer ' + key;
   const res = await fetch(url, {
-    headers: {apikey: key, Authorization: 'Bearer ' + key, 'Accept-Profile': schema, Accept: 'application/json'},
+    headers,
     signal: AbortSignal.timeout(3500)
   });
   if (!res.ok) throw new Error('Supabase ' + schema + '.' + table + ' HTTP ' + res.status);
