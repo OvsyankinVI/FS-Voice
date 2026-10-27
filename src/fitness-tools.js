@@ -31,6 +31,10 @@ async function rpc(schema,fn,payload) {
 export const fitnessTools = Object.freeze({
 
   redeemAliceCode(code,aliceUserId) { return rpc('fitness','redeem_alice_link_code',{p_code:code,p_alice_user_id:aliceUserId}); },
+  async listFamilyMembers(aliceUserId) {
+    if(!aliceUserId)return [];
+    return select('fitness','alice_family_members',{select:'owner_id,display_name',alice_user_id:'eq.'+String(aliceUserId),order:'display_name.asc',limit:'20'});
+  },
   async resolveAliceOwner(aliceUserId) {
     if(!aliceUserId)return null;
     const rows=await select('fitness','alice_identity_links',{select:'owner_id',alice_user_id:'eq.'+String(aliceUserId),limit:'2'});
