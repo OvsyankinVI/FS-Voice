@@ -1,10 +1,13 @@
 // Private server-side Supabase read adapter. No dependency required.
 // Never expose SUPABASE_SECRET_KEY to the browser, Alice payloads, or GitHub.
-const base = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SECRET_KEY;
-function configured() { return Boolean(base && key); }
+function credentials() {
+  const base = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SECRET_KEY;
+  if (!base || !key) throw new Error('Supabase is not configured');
+  return {base, key};
+}
 async function select(schema, table, params = {}) {
-  if (!configured()) throw new Error('Supabase is not configured');
+  const {base, key} = credentials();
   const url = new URL('/rest/v1/' + table, base);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
   const res = await fetch(url, {
