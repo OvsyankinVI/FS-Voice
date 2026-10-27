@@ -33,7 +33,7 @@ export const fitnessTools = Object.freeze({
   redeemAliceCode(code,aliceUserId) { return rpc('fitness','redeem_alice_link_code',{p_code:code,p_alice_user_id:aliceUserId}); },
   async listFamilyMembers(aliceUserId) {
     if(!aliceUserId)return [];
-    return select('fitness','alice_family_members',{select:'owner_id,display_name',alice_user_id:'eq.'+String(aliceUserId),order:'display_name.asc',limit:'20'});
+    return select('fitness','voice_profiles',{select:'owner_id,display_name',enabled:'eq.true',order:'display_name.asc',limit:'20'});
   },
   async resolveAliceOwner(aliceUserId) {
     if(!aliceUserId)return null;
