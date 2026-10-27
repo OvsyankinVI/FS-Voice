@@ -78,7 +78,8 @@ if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||808
 export async function handler(event) {
   if(!verifyWebhook(event)) return {statusCode:403,body:'Forbidden'};
   try {
-    const payload=typeof event.body==='string'?JSON.parse(event.body):event.body;
+    const rawBody=event.isBase64Encoded && typeof event.body==='string' ? Buffer.from(event.body,'base64').toString('utf8') : event.body;
+    const payload=typeof rawBody==='string'?JSON.parse(rawBody):rawBody;
     if(!payload || typeof payload!=='object') throw new Error('Invalid payload');
     return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(await handle(payload))};
   } catch(error) {
