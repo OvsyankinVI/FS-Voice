@@ -2,7 +2,7 @@ import http from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
 import {GoogleAuth} from 'google-auth-library';
-import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak} from './core.js';
+import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -48,7 +48,7 @@ export async function handle(req) {
   const phrase=req?.request?.original_utterance||'';
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   try {
-    const day=todayMoscow();
+    const foodCommand=parseFoodCommand(phrase);if(foodCommand){if(foodCommand.status==='missing_amount')return aliceResponse(req,'Скажи название продукта и количество в граммах.');if(foodCommand.status==='invalid_amount')return aliceResponse(req,'Укажи массу продукта от одного до десяти тысяч граммов.');if(foodCommand.status==='missing_product')return aliceResponse(req,'Не расслышал название продукта. Повтори, пожалуйста.');return aliceResponse(req,'Понял: '+foodCommand.name+', '+foodCommand.grams+' граммов'+(foodCommand.meal?', '+foodCommand.meal:'')+'. Пока это предварительное распознавание: в дневник ничего не записано.')}const day=todayMoscow();
     if(process.env.FITNESS_DATA_SOURCE==='supabase') {
       const nutrition=await fitnessTools.getTodayNutrition(day).catch(error=>{console.error('Supabase nutrition read failed:',error?.message||String(error));throw new Error('nutrition_read_failed');});
       const targets=await fitnessTools.getTargets().catch(error=>{console.error('Supabase targets read failed:',error?.message||String(error));throw new Error('targets_read_failed');});
