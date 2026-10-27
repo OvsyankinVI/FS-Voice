@@ -30,6 +30,16 @@ async function rpc(schema,fn,payload) {
 }
 export const fitnessTools = Object.freeze({
 
+  saveVoiceBatch({ownerId,items}) {
+    if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
+    return rpc('fitness','voice_add_batch',{p_owner:ownerId,p_items:items});
+  },
+  async searchPersonalFoods(ownerId,query) {
+    const q=String(query||'').trim().replace(/[%*,()]/g,' ');
+    if(!ownerId||q.length<2)return [];
+    const rows=await select('fitness','products',{select:'id,name,serving_basis',owner_id:'eq.'+ownerId,name:'ilike.*'+q+'*',limit:'8'});
+    return rows.map(x=>({kind:'personal',product_id:x.id,name:x.name,detail:x.serving_basis}));
+  },
   saveVoiceUsda({ownerId,fdcId,grams,meal,entryKey}) {
     if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
     return rpc('fitness','voice_add_usda',{p_owner:ownerId,p_fdc:fdcId,p_grams:grams,p_meal:meal,p_key:entryKey});
