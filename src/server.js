@@ -51,6 +51,8 @@ export async function handle(req) {
   const phrase=req?.request?.original_utterance||'';
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   try {
+    const link=phrase.trim().toUpperCase().match(/^(?:ПРИВЯЖИ|ПОДКЛЮЧИ|СВЯЖИ)(?:\\s+(?:АККАУНТ|FS|ДНЕВНИК))?\\s+([A-Z2-9]{12})$/i);
+    if(link){const ok=await fitnessTools.redeemAliceCode(link[1],id);return aliceResponse(req,ok?'Дневник FS успешно привязан.':'Код неверен или истёк. Создай новый код на сайте FS.');}
     const pending=req?.state?.session?.fs_pending;
     if(pending && pending.alice_user_id===id && pending.version===1){
       if(/^(нет|отмена|отмени)$/i.test(phrase.trim()))return aliceResponse(req,'Хорошо, отменил.');
