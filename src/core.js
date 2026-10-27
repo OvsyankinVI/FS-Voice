@@ -85,3 +85,26 @@ export function parseFoodCommand(input) {
   if(text.length<2)return {status:'missing_product'};
   return {status:'parsed',name:text,grams,meal};
 }
+
+export function parseFoodBatch(input) {
+  const raw=String(input??'').trim().toLowerCase().replace(/ё/g,'е');
+  const m=raw.match(/(?:запиши|добавь|съел|съела|ел|ела)\s+(.+)$/i);
+  if(!m)return null;
+  let body=m[1].replace(/^(?:мне|в дневник|в питание)\s+/,'').replace(/^(?:владу|владиславу|ангелине|ангелину)\s+/,'');
+  const mealMatch=body.match(/(?:на|в качестве)\s+(завтрак|обед|ужин|перекус)\b/);
+  const meal=mealMatch?.[1]||'перекус';
+  body=body.replace(/(?:на|в качестве)\s+(?:завтрак|обед|ужин|перекус)\b/,'');
+  const pieces=body.split(/\s*(?:,|;|\s+и\s+)\s*/).map(x=>x.trim()).filter(Boolean);
+  if(pieces.length>10)return {status:'too_many'};
+  const items=[];
+  for(const piece of pieces){
+    const quantity=piece.match(/(\d+(?:[.,]\d+)?)\s*(килограмм(?:а|ов)?|кг|грамм(?:а|ов)?|гр|г)\b/);
+    if(!quantity)return {status:'missing_amount',product:piece};
+    const grams=Number(quantity[1].replace(',','.'))*(quantity[2].startsWith('к')?1000:1);
+    if(!Number.isFinite(grams)||grams<=0||grams>10000)return {status:'invalid_amount'};
+    const name=piece.replace(quantity[0],' ').replace(/^(?:из|по|с)\s+/,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/,'').replace(/\s+/g,' ').trim();
+    if(name.length<2)return {status:'missing_product'};
+    items.push({name,grams,meal});
+  }
+  return {status:'parsed',items};
+}
