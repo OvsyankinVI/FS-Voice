@@ -22,6 +22,11 @@ async function select(schema, table, params = {}) {
 }
 export const fitnessTools = Object.freeze({
 
+  async resolveAliceOwner(aliceUserId) {
+    if(!aliceUserId)return null;
+    const rows=await select('fitness','alice_identity_links',{select:'owner_id',alice_user_id:'eq.'+String(aliceUserId),limit:'2'});
+    return rows.length===1?rows[0].owner_id:null;
+  },
   async searchFoods(query) {
     const q=String(query||'').trim().replace(/[%*,()]/g,' ');
     if(q.length<2)return [];
