@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
+import {fitnessTools} from './fitness-tools.js';
 import {GoogleAuth} from 'google-auth-library';
 import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
@@ -47,9 +48,14 @@ export async function handle(req) {
   const phrase=req?.request?.original_utterance||'';
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   try {
+    const day=todayMoscow();
+    if(process.env.FITNESS_DATA_SOURCE==='supabase') {
+      const [nutrition,targets]=await Promise.all([fitnessTools.getTodayNutrition(day),loadTargets()]);
+      return aliceResponse(req,speak(nutrition,targets,intent(phrase)));
+    }
     if(!sheetId) throw new Error('Missing SPREADSHEET_ID');
     const [days,targets]=await Promise.all([getRows("'Дни'!A1:F1000"),loadTargets()]);
-    return aliceResponse(req,speak(nutritionForDay(days,todayMoscow()),targets,intent(phrase)));
+    return aliceResponse(req,speak(nutritionForDay(days,day),targets,intent(phrase)));
   } catch(error) {
     console.error('Request failed:',error.message);
     return aliceResponse(req,'Сейчас не получается получить данные дневника. Попробуй позже.');
