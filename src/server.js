@@ -50,7 +50,8 @@ export async function handle(req) {
   try {
     const day=todayMoscow();
     if(process.env.FITNESS_DATA_SOURCE==='supabase') {
-      const [nutrition,targets]=await Promise.all([fitnessTools.getTodayNutrition(day),fitnessTools.getTargets()]);
+      const nutrition=await fitnessTools.getTodayNutrition(day).catch(error=>{console.error('Supabase nutrition read failed:',error?.message||String(error));throw new Error('nutrition_read_failed');});
+      const targets=await fitnessTools.getTargets().catch(error=>{console.error('Supabase targets read failed:',error?.message||String(error));throw new Error('targets_read_failed');});
       return aliceResponse(req,speak(nutrition,targets,intent(phrase)));
     }
     if(!sheetId) throw new Error('Missing SPREADSHEET_ID');
