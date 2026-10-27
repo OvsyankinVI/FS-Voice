@@ -50,7 +50,7 @@ export async function handle(req) {
   try {
     const day=todayMoscow();
     if(process.env.FITNESS_DATA_SOURCE==='supabase') {
-      const [nutrition,targets]=await Promise.all([fitnessTools.getTodayNutrition(day),loadTargets()]);
+      const [nutrition,targets]=await Promise.all([fitnessTools.getTodayNutrition(day),fitnessTools.getTargets()]);
       return aliceResponse(req,speak(nutrition,targets,intent(phrase)));
     }
     if(!sheetId) throw new Error('Missing SPREADSHEET_ID');
