@@ -95,7 +95,8 @@ export function parseFoodBatch(input) {
   const meal=mealMatch?.[1]||'перекус';
   body=body.replace(/(?:на|в качестве)\s+(?:завтрак|обед|ужин|перекус)\b/,'');
   // A saved recipe can be added as one serving without a gram amount.\n  if (/^завтрак с бутербродом[.!?\s]*$/u.test(body.trim())) return {status:'parsed',items:[{name:'Завтрак с бутербродом',grams:1,meal:'завтрак'}]};\n  const pieces=body.split(/\s*(?:,|;|\s+и\s+)\s*/).map(x=>x.trim()).filter(Boolean);
-  const pieces=body.split(/\s*(?:,|;|\s+и\s+)\s*/).map(x=>x.trim()).filter(Boolean);\n  if(pieces.length>10)return {status:'too_many'};
+  const pieces=body.split(/\s*(?:,|;|\s+и\s+)\s*/).map(x=>x.trim()).filter(Boolean);
+  if(pieces.length>10)return {status:'too_many'};
   const items=[];
   for(const piece of pieces){
     const quantity=piece.match(/(\d+(?:[.,]\d+)?)\s*(килограмм(?:а|ов)?|кг|грамм(?:а|ов)?|гр|г)(?=$|[\s,;.!?])/);
