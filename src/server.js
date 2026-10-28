@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.3.0-food-write-debug-20261028';
+const BUILD='0.3.1-food-write-verified-20261028';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -109,7 +109,7 @@ export async function handle(req) {
       if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
       stage='confirm_confirmation';
       const result=await fitnessTools.confirmConfirmation(id);
-      if(result?.status==='saved'){const d=Array.isArray(result.details)?result.details:[];const rows=d.map(x=>String(x.name||'продукт')+', '+String(x.grams||'?')+' г: '+x.kcal+' ккал, белки '+x.protein_g+', жиры '+x.fat_g+', углеводы '+x.carbs_g+'. День '+x.day+'. ID '+x.id).join('; ');return aliceResponse(req,'Отладка записи: сохранено '+result.count+'. '+rows); }
+      if(result?.status==='saved'){const count=Number(result.count)||0;const label=count===1?'продукт':count>=2&&count<=4?'продукта':'продуктов';return aliceResponse(req,'Готово! Добавил '+count+' '+label+' в дневник.');}
       if(result?.status==='expired')return aliceResponse(req,'Подтверждение устарело. Назови продукт и массу ещё раз.');
       return aliceResponse(req,'Нет ожидающей записи для подтверждения. Назови продукт и массу ещё раз.');
     }
