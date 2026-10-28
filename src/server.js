@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.2.3-diagnostics-20261028';
+const BUILD='0.2.4-confirmation-20261028';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -53,7 +53,7 @@ async function loadTargets() {
 }
 function aliceResponse(req,text,endSession=false,state=null) {
   const answer={version:req.version||'1.0',session:req.session,response:{text,tts:text,end_session:endSession}};
-  if(state)answer.session_state=state;
+  if(state){answer.session_state=state;answer.user_state_update=state;}
   return answer;
 }
 
@@ -73,7 +73,8 @@ export async function handle(req) {
     stage='load_family';
     const members=await fitnessTools.listFamilyMembers(id);
     stage='route_command';
-    const state=req?.state?.session||{};
+    const state=req?.state?.session?.fs_batch_pending||req?.state?.session?.fs_batch_recipient ? req.state.session : (req?.state?.user||req?.state?.session||{});
+    console.info('[FS-Voice]',BUILD,'confirmation_state',state.fs_batch_pending?'pending':state.fs_batch_recipient?'recipient':'none');
     const recipientOf=(utterance)=>members.filter(m=>{
       const name=m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е');
       const stem=name.startsWith('ангелин')?'ангелин':name.startsWith('влад')?'влад':name;
@@ -121,6 +122,7 @@ export async function handle(req) {
         return aliceResponse(req,Array.isArray(ids)&&ids.length===items.length?'Готово! Добавил '+ids.length+' продуктов в дневник.':'Не удалось подтвердить сохранение.');
       }
     }
+    if(/^(да|подтверждаю|верно)$/i.test(phrase.trim()))return aliceResponse(req,'Нет ожидающей записи для подтверждения. Назови продукт и массу ещё раз.');
     const command=parsedCommand;
     if(command){
       if(command.status!=='parsed')return aliceResponse(req,command.status==='too_many'?'За один раз можно добавить не больше десяти продуктов.':command.status==='missing_amount'?'Укажи массу каждого продукта в граммах.':'Проверь название и массу продуктов.');
