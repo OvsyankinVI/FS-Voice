@@ -62,6 +62,8 @@ export const fitnessTools = Object.freeze({
   async searchFoods(query) {
     const q=String(query||'').trim().replace(/[%*,()]/g,' ');
     if(q.length<2)return [];
+    const preferred=await select('fitness','preferred_foods',{select:'term_ru,usda_foods(fdc_id,name_en,name_ru,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g)',term_ru:'ilike.*'+q+'*',limit:'10'});
+    if(preferred.length===1 && preferred[0].usda_foods){const x=preferred[0].usda_foods;return [{kind:'usda',fdc_id:x.fdc_id,name:preferred[0].term_ru,detail:x.name_en}];}
     const [aliases,english]=await Promise.all([
       select('fitness','food_search_terms',{select:'term_ru,usda_foods(fdc_id,name_en,name_ru,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g)',term_ru:'ilike.*'+q+'*',limit:'10'}),
       select('fitness','usda_foods',{select:'fdc_id,name_en,name_ru,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g',name_en:'ilike.*'+q+'*',limit:'8'})
