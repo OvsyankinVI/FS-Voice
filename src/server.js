@@ -154,6 +154,7 @@ export async function handler(event) {
     return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(await handle(payload))};
   } catch(error) {
     diagnostic('handler',error);
+    if(error instanceof SyntaxError || error.message==='Invalid payload') return {statusCode:400,body:'Bad Request'};
     return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({version:'1.0',response:{text:'Внутренняя ошибка Джарвиса. Код диагностики: '+BUILD+'.',end_session:false}})};
   }
 }
