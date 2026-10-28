@@ -96,11 +96,11 @@ test('Alice durable two-turn confirmation without state saves once and can save 
   assert.ok(first.user_state_update.fs_batch_pending);
   assert.equal(saved,0);
   const confirm=await send(request('да'));
-  assert.match(confirm.response.text,/Отладка записи: сохранено 1/);assert.match(confirm.response.text,/100 ккал/);
+  assert.match(confirm.response.text,/Готово! Добавил 1 продукт/);
   assert.equal(saved,1);
   const second=await send(request('добавь 40 грамм хлеб'));
   const confirm2=await send(request('да'));
-  assert.match(confirm2.response.text,/Отладка записи: сохранено 1/);
+  assert.match(confirm2.response.text,/Готово! Добавил 1 продукт/);
   assert.equal(saved,2);
   const orphan=await send(request('да'));
   assert.match(orphan.response.text,/Нет ожидающей записи/);
