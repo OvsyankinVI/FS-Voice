@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.2.4-confirmation-20261028';
+const BUILD='0.2.5-durable-confirmation-20261028';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -99,9 +99,24 @@ export async function handle(req) {
     const prepare=async(owner,items)=>{
       const result=await resolveItems(owner.owner_id,items);
       if(result.error)return aliceResponse(req,result.error);
+      stage='stage_confirmation';
+      await fitnessTools.stageConfirmation({aliceUserId:id,ownerId:owner.owner_id,items:result.selected.map(({name,...item})=>item)});
       const summary=result.selected.map(x=>x.name+' '+x.grams+' граммов').join(', ');
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
+    if(/^(да|подтверждаю|верно)$/i.test(phrase.trim())){
+      if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
+      stage='confirm_confirmation';
+      const result=await fitnessTools.confirmConfirmation(id);
+      if(result?.status==='saved')return aliceResponse(req,'Готово! Добавил '+result.count+' продуктов в дневник.');
+      if(result?.status==='expired')return aliceResponse(req,'Подтверждение устарело. Назови продукт и массу ещё раз.');
+      return aliceResponse(req,'Нет ожидающей записи для подтверждения. Назови продукт и массу ещё раз.');
+    }
+    if(/^(нет|отмена|отмени)$/i.test(phrase.trim())){
+      stage='cancel_confirmation';
+      const cancelled=await fitnessTools.cancelConfirmation(id);
+      return aliceResponse(req,cancelled?'Отменил запись.':'Нет ожидающей записи для отмены.');
+    }
     const question=state.fs_batch_recipient;
     if(question?.version===1&&question.alice_user_id===id){
       if(/^(нет|отмена|отмени)$/i.test(phrase.trim()))return aliceResponse(req,'Отменил.');
