@@ -25,7 +25,7 @@ async function rpc(schema,fn,payload) {
   const headers={apikey:key,'Content-Profile':schema,'Accept-Profile':schema,'Content-Type':'application/json',Accept:'application/json'};
   if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
   const res=await fetch(new URL('/rest/v1/rpc/'+fn,base),{method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(3500)});
-  if(!res.ok)throw new Error('Supabase RPC '+fn+' HTTP '+res.status);
+  if(!res.ok){const body=await res.text();let detail='';try{const parsed=JSON.parse(body);detail=String(parsed.message||parsed.code||'').slice(0,180);}catch{}throw new Error('Supabase RPC '+fn+' HTTP '+res.status+(detail?' / '+detail:''));}
   if(res.status===204)return null;
   const body=await res.text();
   return body.trim()?JSON.parse(body):null;
