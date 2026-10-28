@@ -47,6 +47,7 @@ test('real Yandex Dialogs request reaches food lookup with mocked Supabase',asyn
     if(url.pathname.endsWith('/products'))return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
     if(url.pathname.endsWith('/food_search_terms'))return new Response(JSON.stringify([{term_ru:'банан',usda_foods:{fdc_id:173944,name_en:'Bananas, raw',name_ru:'Банан'}}]),{status:200,headers:{'Content-Type':'application/json'}});
     if(url.pathname.endsWith('/usda_foods'))return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
+    if(url.pathname.endsWith('/rpc/voice_stage_confirmation'))return new Response('null',{status:200,headers:{'Content-Type':'application/json'}});
     throw Error('Unexpected mock request '+url.pathname);
   };
   try {
@@ -64,15 +65,21 @@ test('real Yandex Dialogs request reaches food lookup with mocked Supabase',asyn
   }
 });
 
-test('Alice two-turn confirmation saves once, and a new confirmation can save again',async()=>{
+test('Alice durable two-turn confirmation without state saves once and can save again',async()=>{
  const old={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY,write:process.env.FS_VOICE_WRITE_ENABLED,fetch:globalThis.fetch};
  process.env.SUPABASE_URL='https://example.supabase.co';process.env.SUPABASE_SECRET_KEY='sb_secret_test';process.env.FS_VOICE_WRITE_ENABLED='true';
- let saved=0;
+ let saved=0,staged=null;
  globalThis.fetch=async(input,opts={})=>{
   const path=new URL(String(input)).pathname;
   const json=(data)=>new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
   if(path.endsWith('/voice_profiles'))return json([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]);
   if(path.endsWith('/products'))return json([{id:'4f5f6ac7-a6da-44a3-85cd-8160951a2b54',name:'Harry’s American Sandwich хлеб',serving_basis:'100 г'}]);
+  if(path.endsWith('/rpc/voice_stage_confirmation')){staged=JSON.parse(opts.body);return json(null);}
+  if(path.endsWith('/rpc/voice_confirm_confirmation')){
+   if(!staged)return json({status:'missing'});
+   const items=staged.p_items;staged=null;assert.equal(items.length,1);assert.equal(items[0].grams,40);saved++;return json({status:'saved',count:1});
+  }
+  if(path.endsWith('/rpc/voice_cancel_confirmation')){staged=null;return json(true);}
   if(path.endsWith('/rpc/voice_add_batch')){
    const body=JSON.parse(opts.body);assert.equal(body.p_items.length,1);assert.equal(body.p_items[0].grams,40);
    saved++;return json(['11111111-1111-4111-8111-111111111111']);
@@ -87,11 +94,11 @@ test('Alice two-turn confirmation saves once, and a new confirmation can save ag
   assert.ok(first.session_state.fs_batch_pending);
   assert.ok(first.user_state_update.fs_batch_pending);
   assert.equal(saved,0);
-  const confirm=await send(request('да',{session:first.session_state}));
+  const confirm=await send(request('да'));
   assert.match(confirm.response.text,/Готово/);
   assert.equal(saved,1);
   const second=await send(request('добавь 40 грамм хлеб'));
-  const confirm2=await send(request('да',{user:second.user_state_update}));
+  const confirm2=await send(request('да'));
   assert.match(confirm2.response.text,/Готово/);
   assert.equal(saved,2);
   const orphan=await send(request('да'));
