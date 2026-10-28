@@ -7,6 +7,12 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
+const BUILD='0.2.1-diagnostics-20261028';
+function diagnostic(stage,error){
+  const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
+  console.error('[FS-Voice]',BUILD,stage,message);
+}
+
 function matchesSecret(candidate) {
   if(!webhookSecret || typeof candidate!=='string') return false;
   const expected=Buffer.from(webhookSecret), actual=Buffer.from(candidate);
@@ -51,9 +57,10 @@ export async function handle(req) {
   const phrase=req?.request?.original_utterance||'';
   // Diagnostic command: independent of Supabase and nutrition availability.
   if (/^(?:джарвис[,.!]?\s*)?(?:какая\s+у\s+тебя\s+версия|назови\s+(?:свою\s+)?версию|версия)(?:[?!.\s]*)$/iu.test(phrase.trim()))
-    return aliceResponse(req,'Версия Джарвиса: 0.2.0, сборка voice-version-20261028.');
+    return aliceResponse(req,'Версия Джарвиса: '+BUILD+'.');
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   try {
+    console.info('[FS-Voice]',BUILD,'command',parseFoodBatch(phrase)?'food':'read');
     const members=await fitnessTools.listFamilyMembers(id);
     const state=req?.state?.session||{};
     const recipientOf=(utterance)=>members.filter(m=>{
@@ -65,6 +72,7 @@ export async function handle(req) {
       const selected=[];
       for(const item of items){
         const name=item.name.replace(/^(?:владу|владиславу|ангелине|ангелину)\s+/i,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/i,'').trim();
+        console.info('[FS-Voice]',BUILD,'search_product',name.length);
         const personal=await fitnessTools.searchPersonalFoods(ownerId,name);
         const found=personal.length?personal:await fitnessTools.searchFoods(name);
         if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
@@ -119,8 +127,8 @@ export async function handle(req) {
     const [days,targets]=await Promise.all([getRows("'Дни'!A1:F1000"),loadTargets()]);
     return aliceResponse(req,speak(nutritionForDay(days,day),targets,intent(phrase)));
   } catch(error) {
-    console.error('Request failed:',error.message);
-    return aliceResponse(req,'Сейчас не получается получить данные дневника. Попробуй позже.');
+    diagnostic('handle',error);
+    return aliceResponse(req,'Ошибка обработки запроса. Проверь настройки интеграции или попробуй позже.');
   }
 }
 const server=http.createServer(async (request,response)=>{
@@ -134,7 +142,7 @@ const server=http.createServer(async (request,response)=>{
     const answer=await handle(payload);
     response.writeHead(200,{'content-type':'application/json; charset=utf-8'});
     response.end(JSON.stringify(answer));
-  }catch(e){response.writeHead(400);response.end();}
+  }catch(e){diagnostic('local_http',e);response.writeHead(200,{'content-type':'application/json; charset=utf-8'});response.end(JSON.stringify({version:'1.0',response:{text:'Ошибка обработки запроса.',end_session:false}}));}
 });
 if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||8080));
 export async function handler(event) {
@@ -145,7 +153,7 @@ export async function handler(event) {
     if(!payload || typeof payload!=='object') throw new Error('Invalid payload');
     return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(await handle(payload))};
   } catch(error) {
-    console.error('Invalid request:',error.message);
-    return {statusCode:400,body:'Bad Request'};
+    diagnostic('handler',error);
+    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({version:'1.0',response:{text:'Внутренняя ошибка Джарвиса. Код диагностики: '+BUILD+'.',end_session:false}})};
   }
 }
