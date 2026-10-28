@@ -24,3 +24,14 @@ test('accepts base64-encoded JSON HTTP body',async()=>{
 test('rejects malformed authorized body',async()=>{
   assert.equal((await handler({...base,body:'{broken'})).statusCode,400);
 });
+
+test('food command returns valid Alice response rather than HTTP failure',async()=>{
+  const req={version:'1.0',session:{new:false,user:{user_id:'test-user'},message_id:4,session_id:'test-session'},request:{original_utterance:'добавь 100 грамм банана',command:'добавь 100 грамм банана'}};
+  const result=await handler({...base,body:JSON.stringify(req)});
+  assert.equal(result.statusCode,200);
+  const body=JSON.parse(result.body);
+  assert.equal(body.version,'1.0');
+  assert.equal(typeof body.response?.text,'string');
+  assert.ok(body.response.text.length>0);
+  assert.doesNotMatch(body.response.text,/Внутренняя ошибка Джарвиса/);
+});
