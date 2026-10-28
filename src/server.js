@@ -1,13 +1,13 @@
 import http from 'node:http';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
-import {GoogleAuth} from 'google-auth-library';
+
 import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand,parseFoodBatch} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.2.9-food-write-debug-20261028';
+const BUILD='0.3.0-food-write-debug-20261028';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -30,13 +30,14 @@ function verifyWebhook(event) {
   const supplied=query.key||query.token||'';
   return matchesSecret(supplied);
 }
-function googleAuth() {
+async function googleAuth() {
+  const {GoogleAuth}=await import('google-auth-library');
   const raw=process.env.GOOGLE_CREDENTIALS_JSON;
   const credentials=raw ? JSON.parse(raw) : undefined;
   return new GoogleAuth({credentials,scopes:['https://www.googleapis.com/auth/spreadsheets.readonly']});
 }
 async function getRows(range) {
-  const client=await googleAuth().getClient();
+  const client=await (await googleAuth()).getClient();
   const token=await client.getAccessToken();
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}`;
   const res=await fetch(url,{headers:{Authorization:`Bearer ${token.token}`},signal:AbortSignal.timeout(2500)});
