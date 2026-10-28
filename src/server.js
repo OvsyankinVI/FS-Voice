@@ -49,6 +49,9 @@ export async function handle(req) {
   if(!allowed.length || !id || !allowed.includes(id))
     return aliceResponse(req,'Доступ к этому дневнику не разрешён.',true);
   const phrase=req?.request?.original_utterance||'';
+  // Diagnostic command: independent of Supabase and nutrition availability.
+  if (/^(?:джарвис[,.!]?\s*)?(?:какая\s+у\s+тебя\s+версия|назови\s+(?:свою\s+)?версию|версия)(?:[?!.\s]*)$/iu.test(phrase.trim()))
+    return aliceResponse(req,'Версия Джарвиса: 0.2.0, сборка voice-version-20261028.');
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   try {
     const members=await fitnessTools.listFamilyMembers(id);
