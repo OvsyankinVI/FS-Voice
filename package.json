@@ -11,6 +11,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "google-auth-library": "^9.15.1"
+    "google-auth-library": "^11.3.1"
   }
 }
