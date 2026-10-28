@@ -35,3 +35,31 @@ test('food command returns valid Alice response rather than HTTP failure',async(
   assert.ok(body.response.text.length>0);
   assert.doesNotMatch(body.response.text,/Внутренняя ошибка Джарвиса/);
 });
+
+test('real Yandex Dialogs request reaches food lookup with mocked Supabase',async()=>{
+  const previous={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY,fetch:globalThis.fetch};
+  process.env.SUPABASE_URL='https://example.supabase.co';
+  process.env.SUPABASE_SECRET_KEY='sb_secret_test';
+  const calls=[];
+  globalThis.fetch=async(input)=>{
+    const url=new URL(String(input));calls.push(url.pathname);
+    if(url.pathname.endsWith('/voice_profiles'))return new Response(JSON.stringify([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]),{status:200,headers:{'Content-Type':'application/json'}});
+    if(url.pathname.endsWith('/products'))return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
+    if(url.pathname.endsWith('/food_search_terms'))return new Response(JSON.stringify([{term_ru:'банан',usda_foods:{fdc_id:173944,name_en:'Bananas, raw',name_ru:'Банан'}}]),{status:200,headers:{'Content-Type':'application/json'}});
+    if(url.pathname.endsWith('/usda_foods'))return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
+    throw Error('Unexpected mock request '+url.pathname);
+  };
+  try {
+    const request={meta:{locale:'ru-RU',timezone:'UTC',interfaces:{screen:{},payments:{},account_linking:{}}},session:{message_id:8,session_id:'ab4526b2-ae45-41ab-bf95-a7932c9ce875',skill_id:'4dc9c14f-fd67-43a3-8c71-18eedebc16c3',user:{user_id:'test-user'},application:{application_id:'app'},user_id:'app',new:false},request:{command:'добавь 100 грамм банана',original_utterance:'добавь 100 грамм банана',nlu:{tokens:['добавь','100','грамм','банана'],entities:[{type:'YANDEX.NUMBER',tokens:{start:1,end:2},value:100}],intents:{}},markup:{dangerous_context:false},type:'SimpleUtterance'},version:'1.0'};
+    const result=await handler({...base,body:JSON.stringify(request)});
+    assert.equal(result.statusCode,200);
+    const answer=JSON.parse(result.body);
+    assert.match(answer.response.text,/Добавить для Влад/);
+    assert.equal(answer.session_state.fs_batch_pending.items[0].grams,100);
+    assert.ok(calls.includes('/rest/v1/voice_profiles'));
+  } finally {
+    globalThis.fetch=previous.fetch;
+    if(previous.url===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=previous.url;
+    if(previous.key===undefined)delete process.env.SUPABASE_SECRET_KEY;else process.env.SUPABASE_SECRET_KEY=previous.key;
+  }
+});
