@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.2.1-diagnostics-20261028';
+const BUILD='0.2.2-diagnostics-20261028';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,message);
@@ -151,10 +151,12 @@ export async function handler(event) {
     const rawBody=event.isBase64Encoded && typeof event.body==='string' ? Buffer.from(event.body,'base64').toString('utf8') : event.body;
     const payload=typeof rawBody==='string'?JSON.parse(rawBody):rawBody;
     if(!payload || typeof payload!=='object') throw new Error('Invalid payload');
-    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(await handle(payload))};
+    const answer=await handle(payload);
+    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(answer)};
   } catch(error) {
     diagnostic('handler',error);
     if(error instanceof SyntaxError || error.message==='Invalid payload') return {statusCode:400,body:'Bad Request'};
-    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({version:'1.0',response:{text:'Внутренняя ошибка Джарвиса. Код диагностики: '+BUILD+'.',end_session:false}})};
+    const stage=error?.diagnosticStage||'handler';
+    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({version:'1.0',response:{text:'Внутренняя ошибка Джарвиса. Этап: '+stage+'. Версия: '+BUILD+'.',end_session:false}})};
   }
 }
