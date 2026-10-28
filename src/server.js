@@ -7,11 +7,18 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.2.2-diagnostics-20261028';
+const BUILD='0.2.3-diagnostics-20261028';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
-  console.error('[FS-Voice]',BUILD,stage,message);
+  console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
 }
+function safeErrorCode(error){
+  const type=['TypeError','ReferenceError','RangeError','SyntaxError','AggregateError'].includes(error?.name)?error.name:'Error';
+  const message=String(error?.message||'');
+  const category=/Supabase is not configured/i.test(message)?'SUPABASE_CONFIG':/Supabase.*HTTP\s*(\d+)/i.test(message)?'SUPABASE_HTTP_'+message.match(/Supabase.*HTTP\s*(\d+)/i)[1]:/timeout|abort/i.test(message)?'TIMEOUT':/fetch failed/i.test(message)?'NETWORK':'UNCLASSIFIED';
+  return type+' / '+category;
+}
+
 
 function matchesSecret(candidate) {
   if(!webhookSecret || typeof candidate!=='string') return false;
@@ -59,9 +66,13 @@ export async function handle(req) {
   if (/^(?:джарвис[,.!]?\s*)?(?:какая\s+у\s+тебя\s+версия|назови\s+(?:свою\s+)?версию|версия)(?:[?!.\s]*)$/iu.test(phrase.trim()))
     return aliceResponse(req,'Версия Джарвиса: '+BUILD+'.');
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
+  let stage='parse_command';
   try {
-    console.info('[FS-Voice]',BUILD,'command',parseFoodBatch(phrase)?'food':'read');
+    const parsedCommand=parseFoodBatch(phrase);
+    console.info('[FS-Voice]',BUILD,'command',parsedCommand?'food':'read');
+    stage='load_family';
     const members=await fitnessTools.listFamilyMembers(id);
+    stage='route_command';
     const state=req?.state?.session||{};
     const recipientOf=(utterance)=>members.filter(m=>{
       const name=m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е');
@@ -73,7 +84,9 @@ export async function handle(req) {
       for(const item of items){
         const name=item.name.replace(/^(?:владу|владиславу|ангелине|ангелину)\s+/i,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/i,'').trim();
         console.info('[FS-Voice]',BUILD,'search_product',name.length);
+        stage='search_personal';
         const personal=await fitnessTools.searchPersonalFoods(ownerId,name);
+        stage='search_usda';
         const found=personal.length?personal:await fitnessTools.searchFoods(name);
         if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
         if(found.length>1)return {error:'Для «'+name+'» нашёл несколько вариантов: '+found.slice(0,3).map(x=>x.name).join(', ')+'. Уточни название. Ничего не записано.'};
@@ -103,11 +116,12 @@ export async function handle(req) {
         if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
         const items=pending.items;
         if(!Array.isArray(items)||items.length<1||items.length>10||items.some(x=>!['usda','personal'].includes(x.kind)||!Number.isFinite(Number(x.grams))||Number(x.grams)<=0||Number(x.grams)>10000||!/^[0-9a-f-]{36}$/i.test(String(x.entry_key))))return aliceResponse(req,'Ошибка подтверждения. Ничего не добавлено.');
+        stage='save_batch';
         const ids=await fitnessTools.saveVoiceBatch({ownerId:pending.owner_id,items});
         return aliceResponse(req,Array.isArray(ids)&&ids.length===items.length?'Готово! Добавил '+ids.length+' продуктов в дневник.':'Не удалось подтвердить сохранение.');
       }
     }
-    const command=parseFoodBatch(phrase);
+    const command=parsedCommand;
     if(command){
       if(command.status!=='parsed')return aliceResponse(req,command.status==='too_many'?'За один раз можно добавить не больше десяти продуктов.':command.status==='missing_amount'?'Укажи массу каждого продукта в граммах.':'Проверь название и массу продуктов.');
       if(!members.length)return aliceResponse(req,'В FS нет доступных голосовых профилей.');
@@ -127,8 +141,8 @@ export async function handle(req) {
     const [days,targets]=await Promise.all([getRows("'Дни'!A1:F1000"),loadTargets()]);
     return aliceResponse(req,speak(nutritionForDay(days,day),targets,intent(phrase)));
   } catch(error) {
-    diagnostic('handle',error);
-    return aliceResponse(req,'Ошибка обработки запроса. Проверь настройки интеграции или попробуй позже.');
+    diagnostic(stage,error);
+    return aliceResponse(req,'Ошибка Джарвиса. Этап: '+stage+'. Тип: '+safeErrorCode(error)+'. Версия: '+BUILD+'.');
   }
 }
 const server=http.createServer(async (request,response)=>{
@@ -148,15 +162,18 @@ if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||808
 export async function handler(event) {
   if(!verifyWebhook(event)) return {statusCode:403,body:'Forbidden'};
   try {
+    let stage='decode_payload';
     const rawBody=event.isBase64Encoded && typeof event.body==='string' ? Buffer.from(event.body,'base64').toString('utf8') : event.body;
     const payload=typeof rawBody==='string'?JSON.parse(rawBody):rawBody;
+    stage='validate_payload';
     if(!payload || typeof payload!=='object') throw new Error('Invalid payload');
+    stage='handle_request';
     const answer=await handle(payload);
+    stage='serialize_response';
     return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify(answer)};
   } catch(error) {
     diagnostic('handler',error);
     if(error instanceof SyntaxError || error.message==='Invalid payload') return {statusCode:400,body:'Bad Request'};
-    const stage=error?.diagnosticStage||'handler';
-    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({version:'1.0',response:{text:'Внутренняя ошибка Джарвиса. Этап: '+stage+'. Версия: '+BUILD+'.',end_session:false}})};
+    return {statusCode:200,headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({version:'1.0',response:{text:'Внутренняя ошибка Джарвиса. Этап: '+(typeof stage==='string'?stage:'handler')+'. Тип: '+safeErrorCode(error)+'. Версия: '+BUILD+'.',end_session:false}})};
   }
 }
