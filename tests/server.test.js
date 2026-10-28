@@ -63,3 +63,42 @@ test('real Yandex Dialogs request reaches food lookup with mocked Supabase',asyn
     if(previous.key===undefined)delete process.env.SUPABASE_SECRET_KEY;else process.env.SUPABASE_SECRET_KEY=previous.key;
   }
 });
+
+test('Alice two-turn confirmation saves once, and a new confirmation can save again',async()=>{
+ const old={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY,write:process.env.FS_VOICE_WRITE_ENABLED,fetch:globalThis.fetch};
+ process.env.SUPABASE_URL='https://example.supabase.co';process.env.SUPABASE_SECRET_KEY='sb_secret_test';process.env.FS_VOICE_WRITE_ENABLED='true';
+ let saved=0;
+ globalThis.fetch=async(input,opts={})=>{
+  const path=new URL(String(input)).pathname;
+  const json=(data)=>new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
+  if(path.endsWith('/voice_profiles'))return json([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]);
+  if(path.endsWith('/products'))return json([{id:'4f5f6ac7-a6da-44a3-85cd-8160951a2b54',name:'Harry’s American Sandwich хлеб',serving_basis:'100 г'}]);
+  if(path.endsWith('/rpc/voice_add_batch')){
+   const body=JSON.parse(opts.body);assert.equal(body.p_items.length,1);assert.equal(body.p_items[0].grams,40);
+   saved++;return json(['11111111-1111-4111-8111-111111111111']);
+  }
+  throw Error('Unexpected request '+path);
+ };
+ const request=(command,state)=>({version:'1.0',session:{new:false,user:{user_id:'test-user'},message_id:1,session_id:'test-session'},request:{original_utterance:command,command},...(state?{state}: {})});
+ const send=async(req)=>JSON.parse((await handler({...base,body:JSON.stringify(req)})).body);
+ try{
+  const first=await send(request('добавь 40 грамм хлеб'));
+  assert.match(first.response.text,/Добавить для Влад/);
+  assert.ok(first.session_state.fs_batch_pending);
+  assert.ok(first.user_state_update.fs_batch_pending);
+  assert.equal(saved,0);
+  const confirm=await send(request('да',{session:first.session_state}));
+  assert.match(confirm.response.text,/Готово/);
+  assert.equal(saved,1);
+  const second=await send(request('добавь 40 грамм хлеб'));
+  const confirm2=await send(request('да',{user:second.user_state_update}));
+  assert.match(confirm2.response.text,/Готово/);
+  assert.equal(saved,2);
+  const orphan=await send(request('да'));
+  assert.match(orphan.response.text,/Нет ожидающей записи/);
+  assert.equal(saved,2);
+ }finally{
+  globalThis.fetch=old.fetch;
+  for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_WRITE_ENABLED',old.write]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
+ }
+});
