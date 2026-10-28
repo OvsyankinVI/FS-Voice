@@ -161,8 +161,8 @@ const server=http.createServer(async (request,response)=>{
 if(process.env.RUN_HTTP_SERVER==='1') server.listen(Number(process.env.PORT||8080));
 export async function handler(event) {
   if(!verifyWebhook(event)) return {statusCode:403,body:'Forbidden'};
+  let stage='decode_payload';
   try {
-    let stage='decode_payload';
     const rawBody=event.isBase64Encoded && typeof event.body==='string' ? Buffer.from(event.body,'base64').toString('utf8') : event.body;
     const payload=typeof rawBody==='string'?JSON.parse(rawBody):rawBody;
     stage='validate_payload';
