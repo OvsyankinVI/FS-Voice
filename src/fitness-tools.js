@@ -84,13 +84,21 @@ export const fitnessTools = Object.freeze({
     return Object.fromEntries(keys.map(k => [k, Number(Array.isArray(t[k]) ? t[k][0] : t[k])]));
   },
   async getTodayNutrition(day) {
-    const rows = await select('fitness', 'daily_summaries', {day: 'eq.' + day, select: 'day,kcal,protein_g,fat_g,carbs_g', limit: '2'});
-    if (!rows.length) return {status: 'missing_day', date: day};
-    if (rows.length > 1) return {status: 'duplicate_day', date: day};
-    const row = rows[0];
-    const consumed = {kcal: row.kcal, protein: row.protein_g, fat: row.fat_g, carbs: row.carbs_g};
-    if (Object.values(consumed).some(v => v === null || v === undefined)) return {status: 'incomplete_day', date: day};
-    return {status: 'ok', date: day, consumed: Object.fromEntries(Object.entries(consumed).map(([k,v])=>[k, Number(v)]))};
+    const ownerId=(process.env.FS_VOICE_OWNER_IDS||'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2').split(',')[0].trim();
+    const rows=await select('fitness','food_logs',{owner_id:'eq.'+ownerId,day:'eq.'+day,select:'kcal,protein_g,fat_g,carbs_g',limit:'1000'});
+    const fields=['kcal','protein_g','fat_g','carbs_g'];
+    if(rows.length){
+      if(rows.some(row=>fields.some(k=>row[k]===null||row[k]===undefined||!Number.isFinite(Number(row[k])))))
+        return {status:'incomplete_day',date:day};
+      const sum=Object.fromEntries(fields.map(k=>[k,rows.reduce((total,row)=>total+Number(row[k]),0)]));
+      return {status:'ok',date:day,consumed:{kcal:sum.kcal,protein:sum.protein_g,fat:sum.fat_g,carbs:sum.carbs_g}};
+    }
+    const summaries=await select('fitness','daily_summaries',{owner_id:'eq.'+ownerId,day:'eq.'+day,select:'day,kcal,protein_g,fat_g,carbs_g',limit:'2'});
+    if(!summaries.length)return {status:'missing_day',date:day};
+    if(summaries.length>1)return {status:'duplicate_day',date:day};
+    const row=summaries[0];
+    if(fields.some(k=>row[k]===null||row[k]===undefined||!Number.isFinite(Number(row[k]))))return {status:'incomplete_day',date:day};
+    return {status:'ok',date:day,consumed:{kcal:Number(row.kcal),protein:Number(row.protein_g),fat:Number(row.fat_g),carbs:Number(row.carbs_g)}};
   },
   getNutritionByDate(day) { return this.getTodayNutrition(day); },
   getRecentWorkouts(limit = 30) {
