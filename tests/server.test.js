@@ -45,9 +45,10 @@ test('real Yandex Dialogs request reaches food lookup with mocked Supabase',asyn
     const url=new URL(String(input));calls.push(url.pathname);
     if(url.pathname.endsWith('/voice_profiles'))return new Response(JSON.stringify([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]),{status:200,headers:{'Content-Type':'application/json'}});
     if(url.pathname.endsWith('/products'))return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
+    if(url.pathname.endsWith('/preferred_foods'))return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
     if(url.pathname.endsWith('/food_search_terms'))return new Response(JSON.stringify([{term_ru:'банан',usda_foods:{fdc_id:173944,name_en:'Bananas, raw',name_ru:'Банан'}}]),{status:200,headers:{'Content-Type':'application/json'}});
     if(url.pathname.endsWith('/usda_foods'))return new Response('[]',{status:200,headers:{'Content-Type':'application/json'}});
-    if(url.pathname.endsWith('/rpc/voice_stage_confirmation'))return new Response('null',{status:200,headers:{'Content-Type':'application/json'}});
+    if(url.pathname.endsWith('/rpc/voice_stage_confirmation'))return new Response(null,{status:204});
     throw Error('Unexpected mock request '+url.pathname);
   };
   try {
