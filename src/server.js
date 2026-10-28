@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.2.8-food-write-errors-20261028';
+const BUILD='0.2.9-food-write-debug-20261028';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -108,7 +108,7 @@ export async function handle(req) {
       if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
       stage='confirm_confirmation';
       const result=await fitnessTools.confirmConfirmation(id);
-      if(result?.status==='saved')return aliceResponse(req,'Готово! Добавил '+result.count+' продуктов в дневник.');
+      if(result?.status==='saved'){const d=Array.isArray(result.details)?result.details:[];const rows=d.map(x=>String(x.name||'продукт')+', '+String(x.grams||'?')+' г: '+x.kcal+' ккал, белки '+x.protein_g+', жиры '+x.fat_g+', углеводы '+x.carbs_g+'. День '+x.day+'. ID '+x.id).join('; ');return aliceResponse(req,'Отладка записи: сохранено '+result.count+'. '+rows); }
       if(result?.status==='expired')return aliceResponse(req,'Подтверждение устарело. Назови продукт и массу ещё раз.');
       return aliceResponse(req,'Нет ожидающей записи для подтверждения. Назови продукт и массу ещё раз.');
     }
@@ -159,7 +159,7 @@ export async function handle(req) {
     return aliceResponse(req,speak(nutritionForDay(days,day),targets,intent(phrase)));
   } catch(error) {
     diagnostic(stage,error);
-    if(stage==='confirm_confirmation'||stage==='save_batch') return aliceResponse(req,'Не удалось записать продукт: данные о калориях, белках, жирах или углеводах отсутствуют либо произошла ошибка сохранения. Дневник не изменён. Проверь КБЖУ продукта и попробуй снова.');
+    if(stage==='confirm_confirmation'||stage==='save_batch'){const detail=String(error?.message||'').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\\s+\\S+)/g,'[REDACTED]').slice(0,220);return aliceResponse(req,'Ошибка записи, этап '+stage+'. База отклонила операцию, запись не подтверждена. Диагностика: '+detail+'.');}
     return aliceResponse(req,'Ошибка Джарвиса. Этап: '+stage+'. Тип: '+safeErrorCode(error)+'. Версия: '+BUILD+'.');
   }
 }
