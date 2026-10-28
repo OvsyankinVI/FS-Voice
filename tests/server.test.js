@@ -78,7 +78,7 @@ test('Alice durable two-turn confirmation without state saves once and can save 
   if(path.endsWith('/rpc/voice_stage_confirmation')){staged=JSON.parse(opts.body);return new Response(null,{status:204});}
   if(path.endsWith('/rpc/voice_confirm_confirmation')){
    if(!staged)return json({status:'missing'});
-   const items=staged.p_items;staged=null;assert.equal(items.length,1);assert.equal(items[0].grams,40);saved++;return json({status:'saved',count:1});
+   const items=staged.p_items;staged=null;assert.equal(items.length,1);assert.equal(items[0].grams,40);saved++;return json({status:'saved',count:1,details:[{id:'11111111-1111-4111-8111-111111111111',name:'Harry’s American Sandwich хлеб',day:'2026-10-28',kcal:100,protein_g:3,fat_g:1,carbs_g:20}]});
   }
   if(path.endsWith('/rpc/voice_cancel_confirmation')){staged=null;return json(true);}
   if(path.endsWith('/rpc/voice_add_batch')){
@@ -96,11 +96,11 @@ test('Alice durable two-turn confirmation without state saves once and can save 
   assert.ok(first.user_state_update.fs_batch_pending);
   assert.equal(saved,0);
   const confirm=await send(request('да'));
-  assert.match(confirm.response.text,/Готово/);
+  assert.match(confirm.response.text,/Отладка записи: сохранено 1/);assert.match(confirm.response.text,/100 ккал/);
   assert.equal(saved,1);
   const second=await send(request('добавь 40 грамм хлеб'));
   const confirm2=await send(request('да'));
-  assert.match(confirm2.response.text,/Готово/);
+  assert.match(confirm2.response.text,/Отладка записи: сохранено 1/);
   assert.equal(saved,2);
   const orphan=await send(request('да'));
   assert.match(orphan.response.text,/Нет ожидающей записи/);
