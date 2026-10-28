@@ -6,14 +6,16 @@ import {speak} from '../src/core.js';
 const oldFetch=globalThis.fetch;
 const oldUrl=process.env.SUPABASE_URL;
 const oldKey=process.env.SUPABASE_SECRET_KEY;
-function mock(rows, status=200) {
+function mock(rows, status=200, logs=[]) {
   process.env.SUPABASE_URL='https://example.supabase.co';
   process.env.SUPABASE_SECRET_KEY='test-only-key';
   globalThis.fetch=async (url,options)=>{
     assert.equal(new URL(url).pathname.startsWith('/rest/v1/'),true);
     assert.equal(options.headers['Accept-Profile'],'fitness');
     assert.equal(options.headers.apikey,'test-only-key');
-    return {ok:status===200,status,json:async()=>rows};
+    const path=new URL(url).pathname;
+    const data=path.endsWith('/food_logs')?logs:rows;
+    return {ok:status===200,status,json:async()=>data};
   };
 }
 test('Supabase nutrition matches existing speak contract',async()=>{
@@ -47,4 +49,17 @@ test('Supabase nutrition targets read from private dashboard config',async()=>{
 test('Supabase targets reject missing config',async()=>{
   mock([]);
   await assert.rejects(fitnessTools.getTargets(),/Expected exactly one/);
+});
+
+test('food logs take priority over stale daily summary',async()=>{
+  mock([{day:'2026-10-28',kcal:'1',protein_g:'1',fat_g:'1',carbs_g:'1'}],200,[
+    {kcal:'200',protein_g:'8',fat_g:'2',carbs_g:'40'},
+    {kcal:'100',protein_g:'4',fat_g:'1',carbs_g:'20'}
+  ]);
+  const result=await fitnessTools.getTodayNutrition('2026-10-28');
+  assert.deepEqual(result.consumed,{kcal:300,protein:12,fat:3,carbs:60});
+});
+test('missing macros in food logs are not treated as zero',async()=>{
+  mock([],200,[{kcal:100,protein_g:null,fat_g:2,carbs_g:10}]);
+  assert.equal((await fitnessTools.getTodayNutrition('2026-10-28')).status,'incomplete_day');
 });
