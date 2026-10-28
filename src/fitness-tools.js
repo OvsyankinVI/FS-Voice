@@ -26,7 +26,9 @@ async function rpc(schema,fn,payload) {
   if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
   const res=await fetch(new URL('/rest/v1/rpc/'+fn,base),{method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(3500)});
   if(!res.ok)throw new Error('Supabase RPC '+fn+' HTTP '+res.status);
-  return res.json();
+  if(res.status===204)return null;
+  const body=await res.text();
+  return body.trim()?JSON.parse(body):null;
 }
 export const fitnessTools = Object.freeze({
 
