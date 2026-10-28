@@ -30,6 +30,9 @@ async function rpc(schema,fn,payload) {
 }
 export const fitnessTools = Object.freeze({
 
+  stageConfirmation({aliceUserId,ownerId,items}) {return rpc('fitness','voice_stage_confirmation',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_items:items});},
+  confirmConfirmation(aliceUserId) {return rpc('fitness','voice_confirm_confirmation',{p_alice_user_id:aliceUserId});},
+  cancelConfirmation(aliceUserId) {return rpc('fitness','voice_cancel_confirmation',{p_alice_user_id:aliceUserId});},
   saveVoiceBatch({ownerId,items}) {
     if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
     return rpc('fitness','voice_add_batch',{p_owner:ownerId,p_items:items});
