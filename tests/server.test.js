@@ -74,7 +74,7 @@ test('Alice durable two-turn confirmation without state saves once and can save 
   const json=(data)=>new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
   if(path.endsWith('/voice_profiles'))return json([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]);
   if(path.endsWith('/products'))return json([{id:'4f5f6ac7-a6da-44a3-85cd-8160951a2b54',name:'Harry’s American Sandwich хлеб',serving_basis:'100 г'}]);
-  if(path.endsWith('/rpc/voice_stage_confirmation')){staged=JSON.parse(opts.body);return json(null);}
+  if(path.endsWith('/rpc/voice_stage_confirmation')){staged=JSON.parse(opts.body);return new Response(null,{status:204});}
   if(path.endsWith('/rpc/voice_confirm_confirmation')){
    if(!staged)return json({status:'missing'});
    const items=staged.p_items;staged=null;assert.equal(items.length,1);assert.equal(items[0].grams,40);saved++;return json({status:'saved',count:1});
