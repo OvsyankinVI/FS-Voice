@@ -75,3 +75,10 @@ test('Russian inflections work across the catalog without fuzzy substitutions',(
   assert.deepEqual(names('банан'),['Банан свежий (без кожуры)']);
   assert.deepEqual(names('кокосового батончика'),[]);
 });
+
+test('light mayonnaise inflections select only mayonnaise',()=>{
+ const rows=['Майонез лёгкий (оценка)','Куриная грудка сырая','Сыр лёгкий Laplandia 17%'].map(name=>({name}));
+ for(const query of ['легкого майонеза','легкий майонез','майонеза легкого','лёгкого майонеза']){
+  assert.deepEqual(rankPersonalFoods(rows,query).map(x=>x.name),['Майонез лёгкий (оценка)']);
+ }
+});
