@@ -87,7 +87,12 @@ export async function handle(req) {
         const name=item.name.replace(/^(?:владу|владиславу|ангелине|ангелину)\s+/i,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/i,'').trim();
         console.info('[FS-Voice]',BUILD,'search_product',name.length);
         stage='search_personal';
-        const personal=await fitnessTools.searchPersonalFoods(ownerId,name);
+        let personal=await fitnessTools.searchPersonalFoods(ownerId,name);
+        // Prefer the plain banana over banana-flavoured drinks.
+        if(name.toLocaleLowerCase('ru').replace(/ё/g,'е')==='банан'){
+          const fruit=personal.filter(x=>/^банан свежий/i.test(x.name));
+          if(fruit.length===1)personal=fruit;
+        }
         stage='search_usda';
         const found=personal.length?personal:await fitnessTools.searchFoods(name);
         if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
@@ -102,7 +107,7 @@ export async function handle(req) {
       if(result.error)return aliceResponse(req,result.error);
       stage='stage_confirmation';
       await fitnessTools.stageConfirmation({aliceUserId:id,ownerId:owner.owner_id,items:result.selected.map(({name,...item})=>item)});
-      const summary=result.selected.map(x=>x.name+' '+x.grams+' граммов').join(', ');
+      const summary=result.selected.map(x=>x.name+' '+x.grams+(x.name==='Сырник домашний'?' шт.':x.name==='Завтрак с бутербродом'?' порция':' граммов')).join(', ');
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
     if(/^(да|подтверждаю|верно)$/i.test(phrase.trim())){
