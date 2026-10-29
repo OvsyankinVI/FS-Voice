@@ -132,10 +132,12 @@ export function parseFoodBatch(input) {
   const syrniki=body.trim().match(/^(\d{1,3})\s*(?:сырник(?:а|ов)?|сырничк(?:а|ов)?)\s*[.!?]*$/u);
   if(syrniki){
     const count=Number(syrniki[1]);
-    return count>=1&&count<=100 ? {status:'parsed',items:[{name:'Сырник домашний',grams:count,meal:'завтрак'}]} : {status:'invalid_amount'};
+    return count>=1&&count<=100 ? {status:'parsed',items:[{name:'Сырник домашний',grams:count,unit:'pcs',meal:'завтрак'}]} : {status:'invalid_amount'};
   }
-  // A saved recipe can be added as one serving without a gram amount. 
-  if (/^завтрак с бутербродом[.!?\s]*$/u.test(body.trim())) return {status:'parsed',items:[{name:'Завтрак с бутербродом',grams:1,meal:'завтрак'}]};
+  // Fixed personal recipe: a spoken name means one saved serving.
+  if (/^кофе с банановым молоком[.!?\s]*$/u.test(body.trim())) return {status:'parsed',items:[{name:'Кофе с банановым молоком',grams:1,unit:'portion',meal}]};
+    // A saved recipe can be added as one serving without a gram amount. 
+  if (/^завтрак с бутербродом[.!?\s]*$/u.test(body.trim())) return {status:'parsed',items:[{name:'Завтрак с бутербродом',grams:1,unit:'portion',meal:'завтрак'}]};
   const pieces=body.split(/\s*(?:,|;|\s+и\s+)\s*/).map(x=>x.trim()).filter(Boolean);
   if(pieces.length>10)return {status:'too_many'};
   const items=[];
