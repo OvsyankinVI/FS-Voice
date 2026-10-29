@@ -124,7 +124,7 @@ export async function handle(req) {
       return aliceResponse(req,'Исправить для '+owner.display_name+': было '+previous+' сырника, фактически '+grams+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:found[0].id,action:'update',grams}});
     }
     // Natural correction of a previously logged piece count, not a new meal.
-    const eatenCorrection=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е').match(/^(?:я\\s+)?(?:съел|съела|поел|поела)\\s+не\\s+(\\d{1,3})\\s+сырник(?:а|ов)?,?\\s+а\\s+(\\d{1,3})(?:\\s+сырник(?:а|ов)?)?[.!?\\s]*$/iu);
+    const eatenCorrection=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е').match(/^(?:я\s+)?(?:съел|съела|поел|поела)\s+не\s+(\d{1,3})\s+сырник(?:а|ов)?,?\s+а\s+(\d{1,3})(?:\s+сырник(?:а|ов)?)?[.!?\s]*$/iu);
     const correctionOld=eatenCorrection?Number(eatenCorrection[1]):null;
     const correctionNew=eatenCorrection?Number(eatenCorrection[2]):null;
     if(eatenCorrection&&(correctionOld<1||correctionNew<1||correctionOld>100||correctionNew>100))return aliceResponse(req,'Укажи количество сырников от одного до ста.');
