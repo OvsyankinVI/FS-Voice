@@ -103,6 +103,9 @@ export async function handle(req) {
       return {selected};
     };
     const prepare=async(owner,items)=>{
+      // Never store millilitres, pieces or portions as grams without a verified conversion.
+      const unsupported=items.find(item=>item.unit&&item.unit!=='g');
+      if(unsupported)return aliceResponse(req,'Для «'+unsupported.name+'» пока не настроен безопасный пересчёт единицы измерения в КБЖУ. Ничего не записано.');
       const result=await resolveItems(owner.owner_id,items);
       if(result.error)return aliceResponse(req,result.error);
       stage='stage_confirmation';
