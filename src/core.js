@@ -100,7 +100,9 @@ export function parseFoodBatch(input) {
     const count=Number(syrniki[1]);
     return count>=1&&count<=100 ? {status:'parsed',items:[{name:'Сырник домашний (1 штука)',grams:count,meal:'завтрак'}]} : {status:'invalid_amount'};
   }
-  // A saved recipe can be added as one serving without a gram amount.\n  if (/^завтрак с бутербродом[.!?\s]*$/u.test(body.trim())) return {status:'parsed',items:[{name:'Завтрак с бутербродом',grams:1,meal:'завтрак'}]};\n  const pieces=body.split(/\s*(?:,|;|\s+и\s+)\s*/).map(x=>x.trim()).filter(Boolean);
+  // A saved recipe can be added as one serving without a gram amount. 
+  if (/^завтрак с бутербродом[.!?\s]*$/u.test(body.trim())) return {status:'parsed',items:[{name:'Завтрак с бутербродом',grams:1,meal:'завтрак'}]};
+  const pieces=body.split(/\s*(?:,|;|\s+и\s+)\s*/).map(x=>x.trim()).filter(Boolean);
   if(pieces.length>10)return {status:'too_many'};
   const items=[];
   for(const piece of pieces){
