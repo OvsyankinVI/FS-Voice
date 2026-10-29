@@ -45,6 +45,8 @@ export function rankPersonalFoods(rows,query){
   const genericProtein=q.length===1&&inflected(q[0],'протеин');
   const lightCheese=q.length===2&&q.some(w=>inflected(w,'легкий'))&&q.some(w=>inflected(w,'сыр'));
   if(lightCheese)return rows.filter(row=>/^сыр легкий laplandia 17%$/iu.test(String(row.name).replace(/ё/g,'е')));
+  const lightMayo=q.length===2&&q.some(w=>inflected(w,'легкий'))&&q.some(w=>inflected(w,'майонез'));
+  if(lightMayo)return rows.filter(row=>/^майонез легкий(?:\s*\(оценка\))?$/iu.test(String(row.name).replace(/ё/g,'е')));
   const scored=rows.map(row=>{
     const words=foodWords(row.name);
     if(genericProtein){
