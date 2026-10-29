@@ -65,6 +65,8 @@ export function rankPersonalFoods(rows,query){
 }
 export const fitnessTools = Object.freeze({
 
+  listTodayFoodLogs(ownerId,day) {return select('fitness','food_logs',{select:'id,display_name,original_text,meal_type,meal_time,occurred_at,source_extra',owner_id:'eq.'+ownerId,day:'eq.'+day,order:'occurred_at.desc',limit:'200'});},
+  editTodayFood({aliceUserId,ownerId,logId,action,grams}) {if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');return rpc('fitness','voice_edit_food',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_log_id:logId,p_action:action,p_grams:grams??null});},
   stageConfirmation({aliceUserId,ownerId,items}) {return rpc('fitness','voice_stage_confirmation',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_items:items});},
   confirmConfirmation(aliceUserId) {return rpc('fitness','voice_confirm_confirmation',{p_alice_user_id:aliceUserId});},
   cancelConfirmation(aliceUserId) {return rpc('fitness','voice_cancel_confirmation',{p_alice_user_id:aliceUserId});},
