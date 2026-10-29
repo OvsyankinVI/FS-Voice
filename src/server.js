@@ -100,14 +100,14 @@ export async function handle(req) {
         const f=found[0];
         const unit=item.unit||'g';
         let amount=item.grams;
-        if(unit==='g' && f.kind==='personal' && ['portion','pcs','ml'].includes(f.source_extra?.voice_unit))return {error:'Для «'+f.name+'» укажи количество в правильных единицах. Ничего не записано.'};
+        if(unit==='g' && f.kind==='personal' && ['portion','pcs','ml'].includes(f.source_extra?.voice_unit))return {error:'Не могу записать «'+f.name+'» в граммах: в каталоге продукт измеряется в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+', а коэффициент пересчёта в граммы не указан. Скажи количество в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+'. Ничего не записано.'};
         if(unit!=='g'){
-          if(f.kind!=='personal')return {error:'Для «'+f.name+'» нужна подтверждённая единица в личном каталоге. Ничего не записано.'};
+          if(f.kind!=='personal')return {error:'Не могу записать «'+f.name+'» в '+({ml:'миллилитрах',pcs:'штуках',portion:'порциях'})[unit]+': найденный продукт рассчитан на 100 граммов, но его плотность или размер порции неизвестны. Добавь продукт с нужной единицей в личный каталог либо назови массу в граммах. Ничего не записано.'};
           const metadata=f.source_extra||{};
           const legacy=f.name==='Сырник домашний'?'pcs':f.name==='Завтрак с бутербродом'?'portion':null;
           const basisUnit=metadata.voice_unit||legacy;
           const converted=convertFoodQuantity({amount:item.grams,unit},{source_extra:{...metadata,voice_unit:basisUnit,voice_basis_amount:metadata.voice_basis_amount||1}});
-          if(!converted)return {error:'Неизвестен коэффициент пересчёта для «'+f.name+'». Ничего не записано.'};
+          if(!converted)return {error:'Не могу записать «'+f.name+'»: ты указал '+({ml:'миллилитры',pcs:'штуки',portion:'порции'})[unit]+', а в каталоге единица «'+(basisUnit||'не задана')+'». Не указана масса штуки, объём порции или другой подтверждённый коэффициент пересчёта. Уточни количество в единицах каталога. Ничего не записано.'};
           amount=converted.basisAmount;
         }
         selected.push({kind:f.kind,product_id:f.product_id,fdc_id:f.fdc_id,grams:amount,meal:({завтрак:'Завтрак',обед:'Обед',ужин:'Ужин',перекус:'Перекус'})[item.meal]||'Перекус',entry_key:randomUUID(),name:f.name});
