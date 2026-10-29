@@ -30,6 +30,34 @@ async function rpc(schema,fn,payload) {
   const body=await res.text();
   return body.trim()?JSON.parse(body):null;
 }
+// Conservative Russian inflection matching. Every query word must match a
+// catalog word; never silently substitute a different food.
+const foodWords=s=>String(s||'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[^a-zа-я0-9]+/gi,' ').split(/\s+/).filter(w=>w&&w!=='с'&&w!=='и'&&w!=='из');
+const inflected=(a,b)=>{
+  if(a===b)return true;
+  if(a.length<4||b.length<4)return false;
+  let i=0;while(i<Math.min(a.length,b.length)&&a[i]===b[i])i++;
+  return i>=4&&i/Math.min(a.length,b.length)>=0.67&&Math.abs(a.length-b.length)<=4;
+};
+export function rankPersonalFoods(rows,query){
+  const q=foodWords(query);
+  if(!q.length)return [];
+  const genericProtein=q.length===1&&inflected(q[0],'протеин');
+  const scored=rows.map(row=>{
+    const words=foodWords(row.name);
+    if(genericProtein){
+      if(!/^протеин с (фисташкой|печеньем)$/iu.test(row.name))return null;
+      return {row,score:100};
+    }
+    if(!q.every(word=>words.some(candidate=>inflected(word,candidate))))return null;
+    const exact=q.every(word=>words.includes(word));
+    const score=(exact?100:50)+q.length*10-Math.max(0,words.length-q.length)*3;
+    return {row,score};
+  }).filter(Boolean).sort((a,b)=>b.score-a.score);
+  if(!scored.length)return [];
+  // Return alternatives when genuinely ambiguous, rather than guessing.
+  return scored.filter(x=>x.score>=scored[0].score-2).map(x=>x.row);
+}
 export const fitnessTools = Object.freeze({
 
   stageConfirmation({aliceUserId,ownerId,items}) {return rpc('fitness','voice_stage_confirmation',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_items:items});},
@@ -42,8 +70,9 @@ export const fitnessTools = Object.freeze({
   async searchPersonalFoods(ownerId,query) {
     const q=String(query||'').trim().replace(/[%*,()]/g,' ');
     if(!ownerId||q.length<2)return [];
-    const rows=await select('fitness','products',{select:'id,name,serving_basis',owner_id:'eq.'+ownerId,name:'ilike.*'+q+'*',limit:'8'});
-    return rows.map(x=>({kind:'personal',product_id:x.id,name:x.name,detail:x.serving_basis}));
+    // Fetch the owner's small catalog so Russian cases can be matched across all foods.
+    const rows=await select('fitness','products',{select:'id,name,serving_basis',owner_id:'eq.'+ownerId,limit:'1000'});
+    return rankPersonalFoods(rows,q).map(x=>({kind:'personal',product_id:x.id,name:x.name,detail:x.serving_basis}));
   },
   saveVoiceUsda({ownerId,fdcId,grams,meal,entryKey}) {
     if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
