@@ -137,6 +137,7 @@ export async function handle(req) {
       const grams=mass?Number(mass[1].replace(',','.')):null;
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
       if(mass)rest=rest.slice(0,mass.index).trim();
+      if(eatenCorrection)rest='сырник домашний';
       const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г)?$/iu);
       const previous=eatenCorrection?correctionOld:oldMass?Number(oldMass[1].replace(',','.')):null;
       if(oldMass)rest=rest.slice(0,oldMass.index).trim();
