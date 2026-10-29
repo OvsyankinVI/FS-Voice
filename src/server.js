@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.2-count-correction-20261029';
+const BUILD='0.4.3-persistent-confirm-20261029';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -162,6 +162,8 @@ export async function handle(req) {
       if(!found.length)return aliceResponse(req,'Не нашёл подходящую запись за сегодня. Ничего не изменено.');
       if(found.length>1)return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+found.slice(0,4).map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams||'масса неизвестна')+' граммов, '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Уточни массу или приём пищи. Ничего не изменено.');
       const row=found[0];
+      stage='stage_voice_edit';
+      await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
       const pieceUnit=/^сырник домашний$/iu.test(row.display_name||'');
       return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+(pieceUnit?' штуки':' граммов')+(action==='update'?' на '+grams+(pieceUnit?' штуки':' граммов'):'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams}});
     }
@@ -174,6 +176,13 @@ export async function handle(req) {
         const result=await fitnessTools.editTodayFood({aliceUserId:id,ownerId:editPending.owner_id,logId:editPending.log_id,action:editPending.action,grams:editPending.grams});
         return aliceResponse(req,result?.status==='ok'?'Готово! '+(editPending.action==='delete'?'Удалил продукт из дневника.':'Изменил массу продукта в дневнике.'):'Не удалось изменить запись: '+(result?.status||'не найдена')+'.');
       }
+    }
+    if(/^(да|подтверждаю|верно)$/iu.test(phrase.trim())){
+      stage='confirm_voice_edit';
+      const edit=await fitnessTools.confirmVoiceEdit(id);
+      if(edit?.status==='ok')return aliceResponse(req,'Готово! Изменение в дневнике сохранено.');
+      if(edit?.status==='expired')return aliceResponse(req,'Подтверждение изменения устарело. Повтори команду.');
+      if(edit?.status==='unsupported')return aliceResponse(req,'Эту запись пока нельзя изменить по голосу.');
     }
     if(/^(да|подтверждаю|верно)$/i.test(phrase.trim())){
       if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
