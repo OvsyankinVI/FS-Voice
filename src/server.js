@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.0-food-edit-20261029';
+const BUILD='0.4.1-edit-confirm-20261029';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -74,7 +74,7 @@ export async function handle(req) {
     stage='load_family';
     const members=await fitnessTools.listFamilyMembers(id);
     stage='route_command';
-    const state=req?.state?.session?.fs_batch_pending||req?.state?.session?.fs_batch_recipient ? req.state.session : (req?.state?.user||req?.state?.session||{});
+    const state=req?.state?.session?.fs_edit_pending||req?.state?.session?.fs_batch_pending||req?.state?.session?.fs_batch_recipient ? req.state.session : (req?.state?.user||req?.state?.session||{});
     console.info('[FS-Voice]',BUILD,'confirmation_state',state.fs_batch_pending?'pending':state.fs_batch_recipient?'recipient':'none');
     const recipientOf=(utterance)=>members.filter(m=>{
       const name=m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е');
@@ -110,16 +110,6 @@ export async function handle(req) {
       const summary=result.selected.map(x=>x.name+' '+x.grams+(x.name==='Сырник домашний'?' шт.':x.name==='Завтрак с бутербродом'?' порция':' граммов')).join(', ');
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
-    const editPending=state.fs_edit_pending;
-    if(editPending?.version===1&&editPending.alice_user_id===id){
-      if(/^(нет|отмена|отмени)$/iu.test(phrase.trim()))return aliceResponse(req,'Отменил изменение.');
-      if(/^(да|подтверждаю|верно)$/iu.test(phrase.trim())){
-        if(!members.some(m=>m.owner_id===editPending.owner_id))return aliceResponse(req,'Дневник больше недоступен.');
-        stage='edit_food';
-        const result=await fitnessTools.editTodayFood({aliceUserId:id,ownerId:editPending.owner_id,logId:editPending.log_id,action:editPending.action,grams:editPending.grams});
-        return aliceResponse(req,result?.status==='ok'?'Готово! '+(editPending.action==='delete'?'Удалил продукт из дневника.':'Изменил массу продукта в дневнике.'):'Не удалось изменить запись: '+(result?.status||'не найдена')+'.');
-      }
-    }
     const editMatch=phrase.trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\s+(?:(?:вес|массу)\s+)?(.+?)\s*$/iu);
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
@@ -153,6 +143,16 @@ export async function handle(req) {
       if(found.length>1)return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+found.slice(0,4).map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams||'масса неизвестна')+' граммов, '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Уточни массу или приём пищи. Ничего не изменено.');
       const row=found[0];
       return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+' граммов'+(action==='update'?' на '+grams+' граммов':'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams}});
+    }
+    const editPending=state.fs_edit_pending;
+    if(editPending?.version===1&&editPending.alice_user_id===id){
+      if(/^(нет|отмена|отмени)$/iu.test(phrase.trim()))return aliceResponse(req,'Отменил изменение.');
+      if(/^(да|подтверждаю|верно)$/iu.test(phrase.trim())){
+        if(!members.some(m=>m.owner_id===editPending.owner_id))return aliceResponse(req,'Дневник больше недоступен.');
+        stage='edit_food';
+        const result=await fitnessTools.editTodayFood({aliceUserId:id,ownerId:editPending.owner_id,logId:editPending.log_id,action:editPending.action,grams:editPending.grams});
+        return aliceResponse(req,result?.status==='ok'?'Готово! '+(editPending.action==='delete'?'Удалил продукт из дневника.':'Изменил массу продукта в дневнике.'):'Не удалось изменить запись: '+(result?.status||'не найдена')+'.');
+      }
     }
     if(/^(да|подтверждаю|верно)$/i.test(phrase.trim())){
       if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
