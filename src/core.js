@@ -68,6 +68,40 @@ export function speak(result,targets,kind) {
     `Сегодня ${labels[kind]}: ${used} ${units[kind]}. Осталось ${round(Math.max(0,-diff))}.`;
 }
 
+// Units are explicit; never assume that a piece equals a gram.
+export function normalizeFoodQuantity(value, unit) {
+  const n=Number(String(value).replace(',','.'));
+  const u=String(unit).toLowerCase().replace(/ё/g,'е').replace(/\.$/,'');
+  const types=[
+    [/^(г|гр|грамм(а|ов)?)$/u,'g',1],
+    [/^(кг|килограмм(а|ов)?)$/u,'g',1000],
+    [/^(мл|миллилитр(а|ов)?)$/u,'ml',1],
+    [/^(л|литр(а|ов)?)$/u,'ml',1000],
+    [/^(шт|штук|штука|штуки|штуку)$/u,'pcs',1],
+    [/^(порция|порции|порций|порцию)$/u,'portion',1]
+  ];
+  const found=types.find(([pattern])=>pattern.test(u));
+  if(!found||!Number.isFinite(n)||n<=0)return null;
+  const amount=n*found[2];
+  if(amount>10000||(['pcs','portion'].includes(found[1])&&!Number.isInteger(amount)))return null;
+  return {amount,unit:found[1]};
+}
+export function convertFoodQuantity(quantity, product) {
+  const meta=product?.source_extra||{};
+  const unit=meta.voice_unit;
+  const basis=Number(meta.voice_basis_amount||1);
+  if(!quantity||!unit||!Number.isFinite(basis)||basis<=0)return null;
+  let amount=quantity.amount;
+  if(quantity.unit!==unit) {
+    const factor=quantity.unit==='pcs'&&unit==='g'?Number(meta.grams_per_piece):
+      quantity.unit==='portion'&&unit==='g'?Number(meta.grams_per_portion):
+      quantity.unit==='portion'&&unit==='ml'?Number(meta.ml_per_portion):0;
+    if(!Number.isFinite(factor)||factor<=0)return null;
+    amount*=factor;
+  }
+  return {basisAmount:amount,multiplier:amount/basis};
+}
+
 export function parseFoodCommand(input) {
   const raw=String(input??'').trim().toLowerCase().replace(/ё/g,'е');
   const match=raw.match(/(?:запиши|добавь|съел|съела|ел|ела)\s+(.+?)\s*$/i);
