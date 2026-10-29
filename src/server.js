@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.3-persistent-confirm-20261029';
+const BUILD='0.4.4-unit-owner-20261029';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -242,9 +242,13 @@ export async function handle(req) {
     }
     const day=todayMoscow();
     if(process.env.FITNESS_DATA_SOURCE==='supabase') {
-      const nutrition=await fitnessTools.getTodayNutrition(day).catch(error=>{console.error('Supabase nutrition read failed:',error?.message||String(error));throw new Error('nutrition_read_failed');});
+      const chosen=recipientOf(phrase);
+      if(chosen.length>1)return aliceResponse(req,'Назови одного человека, чей дневник показать.');
+      const owner=chosen.length===1?chosen[0]:members.length===1?members[0]:null;
+      if(!owner)return aliceResponse(req,'Чей дневник показать: '+members.map(m=>m.display_name).join(' или ')+'?');
+      const nutrition=await fitnessTools.getTodayNutrition(day,owner.owner_id).catch(error=>{console.error('Supabase nutrition read failed:',error?.message||String(error));throw new Error('nutrition_read_failed');});
       const targets=await fitnessTools.getTargets().catch(error=>{console.error('Supabase targets read failed:',error?.message||String(error));throw new Error('targets_read_failed');});
-      return aliceResponse(req,speak(nutrition,targets,intent(phrase)));
+      return aliceResponse(req,owner.display_name+': '+speak(nutrition,targets,intent(phrase)));
     }
     if(!sheetId) throw new Error('Missing SPREADSHEET_ID');
     const [days,targets]=await Promise.all([getRows("'Дни'!A1:F1000"),loadTargets()]);
