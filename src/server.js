@@ -100,6 +100,7 @@ export async function handle(req) {
         const f=found[0];
         const unit=item.unit||'g';
         let amount=item.grams;
+        if(unit==='g' && f.kind==='personal' && ['portion','pcs','ml'].includes(f.source_extra?.voice_unit))return {error:'Для «'+f.name+'» укажи количество в правильных единицах. Ничего не записано.'};
         if(unit!=='g'){
           if(f.kind!=='personal')return {error:'Для «'+f.name+'» нужна подтверждённая единица в личном каталоге. Ничего не записано.'};
           const metadata=f.source_extra||{};
