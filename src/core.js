@@ -140,13 +140,15 @@ export function parseFoodBatch(input) {
   if(pieces.length>10)return {status:'too_many'};
   const items=[];
   for(const piece of pieces){
-    const quantity=piece.match(/(\d+(?:[.,]\d+)?)\s*(килограмм(?:а|ов)?|кг|миллилитр(?:а|ов)?|мл|грамм(?:а|ов)?|гр|г)(?=$|[\s,;.!?])/);
+    const quantity=piece.match(/(\d+(?:[.,]\d+)?)\s*(килограмм(?:а|ов)?|кг|миллилитр(?:а|ов)?|мл|литр(?:а|ов)?|л|грамм(?:а|ов)?|гр|г|штук|штуки|штука|штуку|шт\.?|порци(?:я|и|й|ю))(?=$|[\s,;.!?])/);
     if(!quantity)return {status:'missing_amount',product:piece};
-    const grams=Number(quantity[1].replace(',','.'))*(quantity[2].startsWith('к')?1000:1);
+    const normalized=normalizeFoodQuantity(quantity[1],quantity[2]);
+    if(!normalized)return {status:'invalid_amount'};
+    const grams=normalized.amount;
     if(!Number.isFinite(grams)||grams<=0||grams>10000)return {status:'invalid_amount'};
     const name=piece.replace(quantity[0],' ').replace(/^(?:из|по|с)\s+/,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/,'').replace(/\s+/g,' ').trim();
     if(name.length<2)return {status:'missing_product'};
-    items.push({name,grams,meal});
+    items.push({name,grams,unit:normalized.unit,meal});
   }
   return {status:'parsed',items};
 }
