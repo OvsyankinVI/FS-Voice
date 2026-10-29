@@ -123,7 +123,13 @@ export async function handle(req) {
       if(found.length!==1)return aliceResponse(req,found.length?'Нашёл несколько записей с '+previous+' сырниками. Уточни запись, ничего не изменено.':'Не нашёл запись с '+previous+' сырниками за сегодня. Ничего не изменено.');
       return aliceResponse(req,'Исправить для '+owner.display_name+': было '+previous+' сырника, фактически '+grams+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:found[0].id,action:'update',grams}});
     }
-    const editMatch=phrase.trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\s+(?:(?:вес|массу)\s+)?(.+?)\s*$/iu);
+    // Natural correction of a previously logged piece count, not a new meal.
+    const eatenCorrection=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е').match(/^(?:я\\s+)?(?:съел|съела|поел|поела)\\s+не\\s+(\\d{1,3})\\s+сырник(?:а|ов)?,?\\s+а\\s+(\\d{1,3})(?:\\s+сырник(?:а|ов)?)?[.!?\\s]*$/iu);
+    const correctionOld=eatenCorrection?Number(eatenCorrection[1]):null;
+    const correctionNew=eatenCorrection?Number(eatenCorrection[2]):null;
+    if(eatenCorrection&&(correctionOld<1||correctionNew<1||correctionOld>100||correctionNew>100))return aliceResponse(req,'Укажи количество сырников от одного до ста.');
+    const correctionPhrase=eatenCorrection?'измени сырник домашний с '+correctionOld+' на '+correctionNew:phrase.trim();
+    const editMatch=correctionPhrase.match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\s+(?:(?:вес|массу)\s+)?(.+?)\s*$/iu);
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
       let rest=editMatch[2].replace(/\s+из\s+(?:сегодняшнего\s+)?дневника.*$/iu,'').trim();
@@ -131,8 +137,8 @@ export async function handle(req) {
       const grams=mass?Number(mass[1].replace(',','.')):null;
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
       if(mass)rest=rest.slice(0,mass.index).trim();
-      const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г)$/iu);
-      const previous=oldMass?Number(oldMass[1].replace(',','.')):null;
+      const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г)?$/iu);
+      const previous=eatenCorrection?correctionOld:oldMass?Number(oldMass[1].replace(',','.')):null;
       if(oldMass)rest=rest.slice(0,oldMass.index).trim();
       const meal=rest.match(/\s+(?:на\s+)?(завтрак|обед|ужин|перекус)(?:е|а)?$/iu);
       if(meal)rest=rest.slice(0,meal.index).trim();
@@ -155,7 +161,8 @@ export async function handle(req) {
       if(!found.length)return aliceResponse(req,'Не нашёл подходящую запись за сегодня. Ничего не изменено.');
       if(found.length>1)return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+found.slice(0,4).map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams||'масса неизвестна')+' граммов, '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Уточни массу или приём пищи. Ничего не изменено.');
       const row=found[0];
-      return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+' граммов'+(action==='update'?' на '+grams+' граммов':'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams}});
+      const pieceUnit=/^сырник домашний$/iu.test(row.display_name||'');
+      return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+(pieceUnit?' штуки':' граммов')+(action==='update'?' на '+grams+(pieceUnit?' штуки':' граммов'):'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams}});
     }
     const editPending=state.fs_edit_pending;
     if(editPending?.version===1&&editPending.alice_user_id===id){
