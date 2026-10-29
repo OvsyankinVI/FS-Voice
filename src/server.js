@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.1-edit-confirm-20261029';
+const BUILD='0.4.2-count-correction-20261029';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -110,6 +110,19 @@ export async function handle(req) {
       const summary=result.selected.map(x=>x.name+' '+x.grams+(x.name==='Сырник домашний'?' шт.':x.name==='Завтрак с бутербродом'?' порция':' граммов')).join(', ');
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
+    // Correction of a previously logged count-based serving, not a new food entry.
+    const countCorrection=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е').match(/^(?:я\\s+)?(?:съел|съела|ел|ела)\\s+не\\s+(\\d{1,3})\\s+сырник(?:а|ов|и)?,?\\s+а\\s+(\\d{1,3})(?:\\s+сырник(?:а|ов|и)?)?[.!?]*$/u);
+    if(countCorrection){
+      const previous=Number(countCorrection[1]),grams=Number(countCorrection[2]);
+      if(previous<1||grams<1||grams>100)return aliceResponse(req,'Укажи количество сырников от 1 до 100.');
+      if(members.length!==1)return aliceResponse(req,'Уточни, чей дневник исправить.');
+      const owner=members[0];
+      stage='find_syrniki';
+      const rows=await fitnessTools.listTodayFoodLogs(owner.owner_id,todayMoscow());
+      const found=rows.filter(row=>String(row.display_name||'').toLocaleLowerCase('ru').includes('сырник')&&Number(row.source_extra?.grams)===previous);
+      if(found.length!==1)return aliceResponse(req,found.length?'Нашёл несколько записей с '+previous+' сырниками. Уточни запись, ничего не изменено.':'Не нашёл запись с '+previous+' сырниками за сегодня. Ничего не изменено.');
+      return aliceResponse(req,'Исправить для '+owner.display_name+': было '+previous+' сырника, фактически '+grams+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:found[0].id,action:'update',grams}});
+    }
     const editMatch=phrase.trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\s+(?:(?:вес|массу)\s+)?(.+?)\s*$/iu);
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
