@@ -120,20 +120,20 @@ export async function handle(req) {
         return aliceResponse(req,result?.status==='ok'?'Готово! '+(editPending.action==='delete'?'Удалил продукт из дневника.':'Изменил массу продукта в дневнике.'):'Не удалось изменить запись: '+(result?.status||'не найдена')+'.');
       }
     }
-    const editMatch=phrase.trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\\s+(?:(?:вес|массу)\\s+)?(.+?)\\s*$/iu);
+    const editMatch=phrase.trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\s+(?:(?:вес|массу)\s+)?(.+?)\s*$/iu);
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
-      let rest=editMatch[2].replace(/\\s+из\\s+(?:сегодняшнего\\s+)?дневника.*$/iu,'').trim();
+      let rest=editMatch[2].replace(/\s+из\s+(?:сегодняшнего\s+)?дневника.*$/iu,'').trim();
       const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:(?:грамм(?:ов|а)?|г)\s*)?)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г)?$/iu);
       const grams=mass?Number(mass[1].replace(',','.')):null;
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
       if(mass)rest=rest.slice(0,mass.index).trim();
-      const oldMass=rest.match(/\\s+со?\\s+(\\d+(?:[.,]\\d+)?)\\s*(?:грамм(?:ов|а)?|г)$/iu);
+      const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г)$/iu);
       const previous=oldMass?Number(oldMass[1].replace(',','.')):null;
       if(oldMass)rest=rest.slice(0,oldMass.index).trim();
-      const meal=rest.match(/\\s+(?:на\\s+)?(завтрак|обед|ужин|перекус)(?:е|а)?$/iu);
+      const meal=rest.match(/\s+(?:на\s+)?(завтрак|обед|ужин|перекус)(?:е|а)?$/iu);
       if(meal)rest=rest.slice(0,meal.index).trim();
-      rest=rest.replace(/^(?:продукт|запись)\\s+/iu,'').trim();
+      rest=rest.replace(/^(?:продукт|запись)\s+/iu,'').trim();
       if(!rest||!members.length)return aliceResponse(req,'Уточни название продукта и получателя.');
       const chosen=recipientOf(phrase);
       const owner=chosen.length===1?chosen[0]:members.length===1?members[0]:null;
