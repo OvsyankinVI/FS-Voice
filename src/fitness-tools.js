@@ -160,8 +160,8 @@ export const fitnessTools = Object.freeze({
     if (!t || !keys.every(k => Number(Array.isArray(t[k]) ? t[k][0] : t[k]) > 0)) throw new Error('Invalid nutrition targets');
     return Object.fromEntries(keys.map(k => [k, Number(Array.isArray(t[k]) ? t[k][0] : t[k])]));
   },
-  async getTodayNutrition(day) {
-    const ownerId=(process.env.FS_VOICE_OWNER_IDS||'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2').split(',')[0].trim();
+  async getTodayNutrition(day,ownerId) {
+    if(!/^[0-9a-f-]{36}$/i.test(String(ownerId||'')))throw new Error('Explicit nutrition owner required');
     const rows=await select('fitness','food_logs',{owner_id:'eq.'+ownerId,day:'eq.'+day,select:'kcal,protein_g,fat_g,carbs_g',limit:'1000'});
     const fields=['kcal','protein_g','fat_g','carbs_g'];
     if(rows.length){
@@ -177,7 +177,7 @@ export const fitnessTools = Object.freeze({
     if(fields.some(k=>row[k]===null||row[k]===undefined||!Number.isFinite(Number(row[k]))))return {status:'incomplete_day',date:day};
     return {status:'ok',date:day,consumed:{kcal:Number(row.kcal),protein:Number(row.protein_g),fat:Number(row.fat_g),carbs:Number(row.carbs_g)}};
   },
-  getNutritionByDate(day) { return this.getTodayNutrition(day); },
+  getNutritionByDate(day,ownerId) { return this.getTodayNutrition(day,ownerId); },
   getRecentWorkouts(limit = 30) {
     return select('fitness', 'workout_sets', {select: 'day,exercise,weight_kg,reps,rir,workout_group,set_number', order: 'day.desc,source_row.desc', limit: Math.min(Math.max(1, limit), 100)});
   },
