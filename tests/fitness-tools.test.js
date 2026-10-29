@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fitnessTools} from '../src/fitness-tools.js';
+import {fitnessTools,rankPersonalFoods} from '../src/fitness-tools.js';
 import {speak} from '../src/core.js';
 
 const oldFetch=globalThis.fetch;
@@ -62,4 +62,16 @@ test('food logs take priority over stale daily summary',async()=>{
 test('missing macros in food logs are not treated as zero',async()=>{
   mock([],200,[{kcal:100,protein_g:null,fat_g:2,carbs_g:10}]);
   assert.equal((await fitnessTools.getTodayNutrition('2026-10-28')).status,'incomplete_day');
+});
+
+test('Russian inflections work across the catalog without fuzzy substitutions',()=>{
+  const rows=['Кокосовое молоко','Шаурма Смоки Шаверме','Макароны Barilla варёные без масла','Протеин с фисташкой','Протеин с печеньем','Протеиновый батончик','Банан свежий (без кожуры)','Банановый соевый напиток для кофе'].map((name,id)=>({id,name}));
+  const names=q=>rankPersonalFoods(rows,q).map(x=>x.name);
+  assert.deepEqual(names('кокосового молока'),['Кокосовое молоко']);
+  assert.deepEqual(names('шаурмы смоки шаверме'),['Шаурма Смоки Шаверме']);
+  assert.deepEqual(names('протеина с фисташкой'),['Протеин с фисташкой']);
+  assert.deepEqual(names('протеина с печеньем'),['Протеин с печеньем']);
+  assert.deepEqual(names('протеин'),['Протеин с фисташкой','Протеин с печеньем']);
+  assert.deepEqual(names('банан'),['Банан свежий (без кожуры)']);
+  assert.deepEqual(names('кокосового батончика'),[]);
 });
