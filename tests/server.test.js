@@ -76,6 +76,7 @@ test('Alice durable two-turn confirmation without state saves once and can save 
   if(path.endsWith('/voice_profiles'))return json([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]);
   if(path.endsWith('/products'))return json([{id:'4f5f6ac7-a6da-44a3-85cd-8160951a2b54',name:'Harry’s American Sandwich хлеб',serving_basis:'100 г'}]);
   if(path.endsWith('/rpc/voice_stage_confirmation')){staged=JSON.parse(opts.body);return new Response(null,{status:204});}
+  if(path.endsWith('/rpc/voice_confirm_edit'))return json({status:'missing'});
   if(path.endsWith('/rpc/voice_confirm_confirmation')){
    if(!staged)return json({status:'missing'});
    const items=staged.p_items;staged=null;assert.equal(items.length,1);assert.equal(items[0].grams,40);saved++;return json({status:'saved',count:1,details:[{id:'11111111-1111-4111-8111-111111111111',name:'Harry’s American Sandwich хлеб',day:'2026-10-28',kcal:100,protein_g:3,fat_g:1,carbs_g:20}]});
@@ -105,6 +106,40 @@ test('Alice durable two-turn confirmation without state saves once and can save 
   const orphan=await send(request('да'));
   assert.match(orphan.response.text,/Нет ожидающей записи/);
   assert.equal(saved,2);
+ }finally{
+  globalThis.fetch=old.fetch;
+  for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_WRITE_ENABLED',old.write]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
+ }
+});
+
+test('durable edit and delete confirmations without Alice state',async()=>{
+ const old={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY,write:process.env.FS_VOICE_WRITE_ENABLED,fetch:globalThis.fetch};
+ process.env.SUPABASE_URL='https://example.supabase.co';process.env.SUPABASE_SECRET_KEY='sb_secret_test';process.env.FS_VOICE_WRITE_ENABLED='true';
+ const logId='11111111-1111-4111-8111-111111111111',owner='ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2';
+ let pending=null,changed=0;
+ globalThis.fetch=async(input,opts={})=>{
+  const path=new URL(String(input)).pathname;
+  const json=x=>new Response(JSON.stringify(x),{status:200,headers:{'Content-Type':'application/json'}});
+  if(path.endsWith('/voice_profiles'))return json([{owner_id:owner,display_name:'Влад',enabled:true}]);
+  if(path.endsWith('/food_logs'))return json([{id:logId,display_name:'Банан свежий (без кожуры)',meal_type:'Перекус',source_extra:{grams:changed===1?150:100}}]);
+  if(path.endsWith('/rpc/voice_stage_edit')){pending=JSON.parse(opts.body);return new Response(null,{status:204});}
+  if(path.endsWith('/rpc/voice_confirm_edit')){if(!pending)return json({status:'missing'});pending=null;changed++;return json({status:'ok'});}
+  if(path.endsWith('/rpc/voice_confirm_confirmation'))return json({status:'missing'});
+  throw Error('Unexpected request '+path);
+ };
+ const request=command=>({version:'1.0',session:{new:false,user:{user_id:'test-user'},message_id:1,session_id:'test-session'},request:{original_utterance:command,command}});
+ const send=async command=>JSON.parse((await handler({...base,body:JSON.stringify(request(command))})).body).response.text;
+ try{
+  assert.match(await send('измени вес банана со 100 на 150 граммов'),/Изменить для Влад/);
+  assert.equal(pending.p_grams,150);
+  assert.match(await send('да'),/Готово!/);
+  assert.equal(changed,1);
+  assert.match(await send('удали банан из сегодняшнего дневника'),/Удалить для Влад/);
+  assert.equal(pending.p_action,'delete');
+  assert.match(await send('да'),/Готово!/);
+  assert.equal(changed,2);
+  assert.match(await send('да'),/Нет ожидающей записи/);
+  assert.equal(changed,2);
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_WRITE_ENABLED',old.write]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
