@@ -2,7 +2,7 @@ import http from 'node:http';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
 
-import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand,parseFoodBatch} from './core.js';
+import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand,parseFoodBatch,convertFoodQuantity} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -98,14 +98,22 @@ export async function handle(req) {
         if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
         if(found.length>1)return {error:'Для «'+name+'» нашёл несколько вариантов: '+found.slice(0,3).map(x=>x.name).join(', ')+'. Уточни название. Ничего не записано.'};
         const f=found[0];
-        selected.push({kind:f.kind,product_id:f.product_id,fdc_id:f.fdc_id,grams:item.grams,meal:({завтрак:'Завтрак',обед:'Обед',ужин:'Ужин',перекус:'Перекус'})[item.meal]||'Перекус',entry_key:randomUUID(),name:f.name});
+        const unit=item.unit||'g';
+        let amount=item.grams;
+        if(unit!=='g'){
+          if(f.kind!=='personal')return {error:'Для «'+f.name+'» нужна подтверждённая единица в личном каталоге. Ничего не записано.'};
+          const metadata=f.source_extra||{};
+          const legacy=f.name==='Сырник домашний'?'pcs':f.name==='Завтрак с бутербродом'?'portion':null;
+          const basisUnit=metadata.voice_unit||legacy;
+          const converted=convertFoodQuantity({amount:item.grams,unit},{source_extra:{...metadata,voice_unit:basisUnit,voice_basis_amount:metadata.voice_basis_amount||1}});
+          if(!converted)return {error:'Неизвестен коэффициент пересчёта для «'+f.name+'». Ничего не записано.'};
+          amount=converted.basisAmount;
+        }
+        selected.push({kind:f.kind,product_id:f.product_id,fdc_id:f.fdc_id,grams:amount,meal:({завтрак:'Завтрак',обед:'Обед',ужин:'Ужин',перекус:'Перекус'})[item.meal]||'Перекус',entry_key:randomUUID(),name:f.name});
       }
       return {selected};
     };
     const prepare=async(owner,items)=>{
-      // Never store millilitres, pieces or portions as grams without a verified conversion.
-      const unsupported=items.find(item=>item.unit&&item.unit!=='g');
-      if(unsupported)return aliceResponse(req,'Для «'+unsupported.name+'» пока не настроен безопасный пересчёт единицы измерения в КБЖУ. Ничего не записано.');
       const result=await resolveItems(owner.owner_id,items);
       if(result.error)return aliceResponse(req,result.error);
       stage='stage_confirmation';
