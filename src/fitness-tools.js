@@ -117,8 +117,8 @@ export const fitnessTools = Object.freeze({
     const q=String(query||'').trim().replace(/[%*,()]/g,' ');
     if(!ownerId||q.length<2)return [];
     // Fetch the owner's small catalog so Russian cases can be matched across all foods.
-    const rows=await select('fitness','products',{select:'id,name,serving_basis',owner_id:'eq.'+ownerId,limit:'1000'});
-    return rankPersonalFoods(rows,q).map(x=>({kind:'personal',product_id:x.id,name:x.name,detail:x.serving_basis}));
+    const rows=await select('fitness','products',{select:'id,name,serving_basis,source_extra',owner_id:'eq.'+ownerId,limit:'1000'});
+    return rankPersonalFoods(rows,q).map(x=>({kind:'personal',product_id:x.id,name:x.name,detail:x.serving_basis,source_extra:x.source_extra}));
   },
   saveVoiceUsda({ownerId,fdcId,grams,meal,entryKey}) {
     if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
