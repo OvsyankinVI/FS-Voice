@@ -104,6 +104,8 @@ export const fitnessTools = Object.freeze({
     const updated=await res.json();
     return {status:updated.length===1?'ok':'missing'};
   },
+  stageVoiceEdit({aliceUserId,ownerId,logId,action,grams}) {return rpc('fitness','voice_stage_edit',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_log_id:logId,p_action:action,p_grams:grams??null});},
+  confirmVoiceEdit(aliceUserId) {if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');return rpc('fitness','voice_confirm_edit',{p_alice_user_id:aliceUserId});},
   stageConfirmation({aliceUserId,ownerId,items}) {return rpc('fitness','voice_stage_confirmation',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_items:items});},
   confirmConfirmation(aliceUserId) {return rpc('fitness','voice_confirm_confirmation',{p_alice_user_id:aliceUserId});},
   cancelConfirmation(aliceUserId) {return rpc('fitness','voice_cancel_confirmation',{p_alice_user_id:aliceUserId});},
