@@ -16,4 +16,6 @@ test('refuses unsafe conversions',()=>{
 test('batch retains explicit units',()=>{
  assert.equal(parseFoodBatch('добавь молоко 250 мл').items[0].unit,'ml');
  assert.equal(parseFoodBatch('добавь банан 150 г').items[0].unit,'g');
+ assert.equal(parseFoodBatch('добавь кофе с банановым молоком 1 порция').items[0].unit,'portion');
+ assert.equal(parseFoodBatch('добавь 2 сырника').items[0].grams,2);
 });
