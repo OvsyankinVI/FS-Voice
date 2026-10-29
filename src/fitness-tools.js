@@ -43,6 +43,8 @@ export function rankPersonalFoods(rows,query){
   const q=foodWords(query);
   if(!q.length)return [];
   const genericProtein=q.length===1&&inflected(q[0],'протеин');
+  const lightCheese=q.length===2&&q.some(w=>inflected(w,'легкий'))&&q.some(w=>inflected(w,'сыр'));
+  if(lightCheese)return rows.filter(row=>/^сыр легкий laplandia 17%$/iu.test(String(row.name).replace(/ё/g,'е')));
   const scored=rows.map(row=>{
     const words=foodWords(row.name);
     if(genericProtein){
@@ -55,6 +57,7 @@ export function rankPersonalFoods(rows,query){
     return {row,score};
   }).filter(Boolean).sort((a,b)=>b.score-a.score);
   if(!scored.length)return [];
+  // Exact requested cheese beats a substring of 'сырая' in unrelated meat.
   // Return alternatives when genuinely ambiguous, rather than guessing.
   return scored.filter(x=>x.score>=scored[0].score-2).map(x=>x.row);
 }
@@ -100,8 +103,10 @@ export const fitnessTools = Object.freeze({
       select('fitness','usda_foods',{select:'fdc_id,name_en,name_ru,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g',name_en:'ilike.*'+q+'*',limit:'8'})
     ]);
     const result=[],seen=new Set();
-    for(const row of aliases){const x=row.usda_foods;if(!x)continue;const key='u:'+x.fdc_id;if(seen.has(key))continue;seen.add(key);result.push({kind:'usda',fdc_id:x.fdc_id,name:row.term_ru,detail:x.name_en});}
-    for(const x of english){const key='u:'+x.fdc_id;if(seen.has(key))continue;seen.add(key);result.push({kind:'usda',fdc_id:x.fdc_id,name:x.name_ru||x.name_en,detail:x.name_en});}
+    const rawMeat=/(?:сыро[ейгю]|сырой|raw|uncooked)/iu;
+    const meat=/(?:грудк|куриц|индейк|говядин|свинин|мяс|chicken|turkey|beef|pork)/iu;
+    for(const row of aliases){const x=row.usda_foods;if(!x)continue;if(rawMeat.test(row.term_ru+' '+x.name_ru+' '+x.name_en)&&meat.test(row.term_ru+' '+x.name_ru+' '+x.name_en))continue;const key='u:'+x.fdc_id;if(seen.has(key))continue;seen.add(key);result.push({kind:'usda',fdc_id:x.fdc_id,name:row.term_ru,detail:x.name_en});}
+    for(const x of english){if(rawMeat.test(x.name_ru+' '+x.name_en)&&meat.test(x.name_ru+' '+x.name_en))continue;const key='u:'+x.fdc_id;if(seen.has(key))continue;seen.add(key);result.push({kind:'usda',fdc_id:x.fdc_id,name:x.name_ru||x.name_en,detail:x.name_en});}
     return result.slice(0,10);
   },
   async getTargets() {
