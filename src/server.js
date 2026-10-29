@@ -124,7 +124,7 @@ export async function handle(req) {
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
       let rest=editMatch[2].replace(/\\s+из\\s+(?:сегодняшнего\\s+)?дневника.*$/iu,'').trim();
-      const mass=rest.match(/\\s+(?:со?\\s+\\d+(?:[.,]\\d+)?\\s*(?:грамм(?:ов|а)?|г)\\s+)?(?:на|до)\\s+(\\d+(?:[.,]\\d+)?)\\s*(?:грамм(?:ов|а)?|г)?$/iu);
+      const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:(?:грамм(?:ов|а)?|г)\s*)?)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г)?$/iu);
       const grams=mass?Number(mass[1].replace(',','.')):null;
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
       if(mass)rest=rest.slice(0,mass.index).trim();
