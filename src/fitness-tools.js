@@ -66,7 +66,44 @@ export function rankPersonalFoods(rows,query){
 export const fitnessTools = Object.freeze({
 
   listTodayFoodLogs(ownerId,day) {return select('fitness','food_logs',{select:'id,display_name,original_text,meal_type,meal_time,occurred_at,source_extra',owner_id:'eq.'+ownerId,day:'eq.'+day,order:'occurred_at.desc',limit:'200'});},
-  editTodayFood({aliceUserId,ownerId,logId,action,grams}) {if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');return rpc('fitness','voice_edit_food',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_log_id:logId,p_action:action,p_grams:grams??null});},
+  async editTodayFood({ownerId,logId,action,grams}) {
+    if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
+    if(!/^[0-9a-f-]{36}$/i.test(String(ownerId))||!/^[0-9a-f-]{36}$/i.test(String(logId)))throw new Error('Invalid identifier');
+    if(!['update','delete'].includes(action))throw new Error('Invalid action');
+    const now=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    const rows=await select('fitness','food_logs',{select:'id,owner_id,day,display_name,source_extra',id:'eq.'+logId,owner_id:'eq.'+ownerId,limit:'1'});
+    const row=rows[0];
+    if(!row||row.day!==now)return {status:'missing'};
+    let body=null;
+    if(action==='update'){
+      if(!Number.isFinite(Number(grams))||Number(grams)<=0||Number(grams)>10000)throw new Error('Invalid grams');
+      const extra=row.source_extra||{};
+      let kcal,protein_g,fat_g,carbs_g;
+      if(extra.product_id){
+        const p=(await select('fitness','products',{select:'id,serving_basis,kcal,protein_g,fat_g,carbs_g',id:'eq.'+extra.product_id,owner_id:'eq.'+ownerId,limit:'1'}))[0];
+        if(!p||!/^\\s*\\d+(?:[.,]\\d+)?\\s*г\\s*$/iu.test(p.serving_basis))return {status:'unsupported'};
+        const basis=Number(p.serving_basis.match(/\\d+(?:[.,]\\d+)?/)[0].replace(',','.'));
+        if(!basis||['kcal','protein_g','fat_g','carbs_g'].some(k=>p[k]==null))return {status:'unsupported'};
+        [kcal,protein_g,fat_g,carbs_g]=['kcal','protein_g','fat_g','carbs_g'].map(k=>Math.round(Number(p[k])*Number(grams)/basis*100)/100);
+      }else if(extra.fdc_id){
+        const p=(await select('fitness','usda_foods',{select:'fdc_id,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g',fdc_id:'eq.'+extra.fdc_id,limit:'1'}))[0];
+        if(!p||['kcal_per_100g','protein_per_100g','fat_per_100g','carbs_per_100g'].some(k=>p[k]==null))return {status:'unsupported'};
+        [kcal,protein_g,fat_g,carbs_g]=['kcal_per_100g','protein_per_100g','fat_per_100g','carbs_per_100g'].map(k=>Math.round(Number(p[k])*Number(grams)/100*100)/100);
+      }else return {status:'unsupported'};
+      body={kcal,protein_g,fat_g,carbs_g,original_text:(row.display_name||'Продукт')+' — '+grams+' г',source_extra:{...extra,grams:Number(grams)}};
+    }
+    const {base,key}=credentials();
+    const url=new URL('/rest/v1/food_logs',base);
+    url.searchParams.set('id','eq.'+logId);
+    url.searchParams.set('owner_id','eq.'+ownerId);
+    url.searchParams.set('day','eq.'+now);
+    const headers={apikey:key,'Content-Profile':'fitness','Accept-Profile':'fitness',Prefer:'return=representation','Content-Type':'application/json'};
+    if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
+    const res=await fetch(url,{method:action==='delete'?'DELETE':'PATCH',headers,...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(3500)});
+    if(!res.ok)throw new Error('Food edit HTTP '+res.status);
+    const updated=await res.json();
+    return {status:updated.length===1?'ok':'missing'};
+  },
   stageConfirmation({aliceUserId,ownerId,items}) {return rpc('fitness','voice_stage_confirmation',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_items:items});},
   confirmConfirmation(aliceUserId) {return rpc('fitness','voice_confirm_confirmation',{p_alice_user_id:aliceUserId});},
   cancelConfirmation(aliceUserId) {return rpc('fitness','voice_cancel_confirmation',{p_alice_user_id:aliceUserId});},
