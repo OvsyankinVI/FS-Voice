@@ -174,7 +174,14 @@ export async function handle(req) {
       if(!found.length)return aliceResponse(req,'Не нашёл подходящую запись за сегодня. Ничего не изменено.');
       if(found.length>1)return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+found.slice(0,4).map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams||'масса неизвестна')+' граммов, '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Уточни массу или приём пищи. Ничего не изменено.');
       const row=found[0];
-      if(action==='update' && !/^сырник домашний$/iu.test(row.display_name||'') && !/^завтрак с бутербродом$/iu.test(row.display_name||'') && !/^кофе с банановым молоком$/iu.test(row.display_name||'') && /(?:шт|штук|порци)/iu.test(mass?.[0]||''))return aliceResponse(req,'Эта запись пока не поддерживает изменение в штуках или порциях.');
+      // Do not let the legacy gram-only edit RPC silently interpret pieces/servings as grams.
+      const editUnit=/порци/iu.test(mass?.[0]||'')?'portion':/(?:шт|штук)/iu.test(mass?.[0]||'')?'pcs':'g';
+      const isPiece=/^сырник домашний$/iu.test(row.display_name||'');
+      const isPortion=/^(?:завтрак с бутербродом|кофе с банановым молоком)$/iu.test(row.display_name||'');
+      if(action==='update' && (editUnit!=='g'||isPiece||isPortion))
+        return aliceResponse(req,'Пока не могу изменить «'+row.display_name+'» в '+(editUnit==='pcs'?'штуках':editUnit==='portion'?'порциях':'граммах')+': серверное изменение количества ещё рассчитывается только в граммах. Чтобы не испортить КБЖУ, запись не меняю. Дождись обновления расчёта порций и штук.');
+      if(action==='update' && /(?:мл|миллилитр|литр)/iu.test(mass?.[0]||''))
+        return aliceResponse(req,'Пока нельзя изменить объём в миллилитрах: серверный пересчёт для объёмов ещё не готов. Запись не изменена.');
       stage='stage_voice_edit';
       await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
       const pieceUnit=/^сырник домашний$/iu.test(row.display_name||'');
