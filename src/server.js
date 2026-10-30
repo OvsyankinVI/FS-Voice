@@ -108,6 +108,24 @@ async function handleCore(req) {
       return members.filter(m=>m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е').startsWith(root));
     };
     const stripRecipient=utterance=>String(utterance||'').replace(recipientNamePattern,' ').replace(/\s+/g,' ').trim();
+    // Durable saved-dish confirmation: works across new Alice sessions.
+    if(/^(да|подтверждаю|верно|нет|отмена|отмени)$/iu.test(phrase.trim())){
+      stage='check_saved_dish_confirmation';
+      const pending=await fitnessTools.pendingSavedDish(id);
+      if(pending?.status==='dish_pending'){
+        if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){
+          await fitnessTools.cancelConfirmation(id);
+          return aliceResponse(req,'Отменил добавление блюда. Ничего не записано.');
+        }
+        if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
+        stage='confirm_saved_dish';
+        const result=await fitnessTools.confirmSavedDish(id);
+        if(result?.status==='saved')return aliceResponse(req,'Готово! Добавил «'+result.name+'» в '+result.meal_type.toLowerCase()+'. '+Math.round(Number(result.kcal||0))+' килокалорий.');
+        if(result?.status==='expired')return aliceResponse(req,'Подтверждение устарело. Назови блюдо ещё раз.');
+        return aliceResponse(req,'Не удалось подтвердить блюдо. Назови его ещё раз.');
+      }
+      if(pending?.status==='dish_consumed'&&/^(да|подтверждаю|верно)$/iu.test(phrase.trim()))return aliceResponse(req,'Это блюдо уже добавлено. Повторно не записываю.');
+    }
     const savedDishCommand=stripRecipient(phrase).trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)\\s+(?:мне\\s+)?(?:блюдо\\s+)?(.+?)(?:\\s+в\\s+(?:мой\\s+)?дневник)?[.!?\\s]*$/iu);
     if(savedDishCommand){
       const dishName=savedDishCommand[1].trim();
@@ -117,7 +135,12 @@ async function handleCore(req) {
         const found=await fitnessTools.findSavedDishes(owners[0].owner_id,dishName);
         if(found.length===1){
           const dish=found[0],sum=key=>dish.items.reduce((a,x)=>a+Number(x[key]||0),0);
-          return aliceResponse(req,'Нашёл сохранённое блюдо «'+dish.name+'»: '+Math.round(sum('kcal'))+' килокалорий, белки '+Math.round(sum('protein_g'))+' граммов, жиры '+Math.round(sum('fat_g'))+', углеводы '+Math.round(sum('carbs_g'))+'. Голосовое добавление пока готовится, запись не сделана.');
+          if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Нашёл блюдо «'+dish.name+'», но запись на сервере пока выключена.');
+          stage='stage_saved_dish';
+          const meal=/завтрак/iu.test(dish.name)?'Завтрак':/обед/iu.test(dish.name)?'Обед':/ужин/iu.test(dish.name)?'Ужин':'Перекус';
+          const staged=await fitnessTools.stageSavedDish({aliceUserId:id,ownerId:owners[0].owner_id,dishId:dish.id,mealType:meal});
+          if(staged?.status!=='pending')return aliceResponse(req,'Не удалось подготовить блюдо к добавлению.');
+          return aliceResponse(req,'Добавить «'+dish.name+'» для '+owners[0].display_name+' в '+meal.toLowerCase()+'? '+Math.round(sum('kcal'))+' килокалорий, белки '+Math.round(sum('protein_g'))+', жиры '+Math.round(sum('fat_g'))+', углеводы '+Math.round(sum('carbs_g'))+' граммов. Скажи да или нет.',false,{fs_saved_dish_pending:{dish_id:dish.id}});
         }
       }
     }
