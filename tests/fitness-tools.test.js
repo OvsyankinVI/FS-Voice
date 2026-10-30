@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {fitnessTools,rankPersonalFoods} from '../src/fitness-tools.js';
 import {speak} from '../src/core.js';
 
+const OWNER_ID='11111111-1111-4111-8111-111111111111';
 const oldFetch=globalThis.fetch;
 const oldUrl=process.env.SUPABASE_URL;
 const oldKey=process.env.SUPABASE_SECRET_KEY;
@@ -20,25 +21,25 @@ function mock(rows, status=200, logs=[]) {
 }
 test('Supabase nutrition matches existing speak contract',async()=>{
   mock([{day:'2026-10-27',kcal:'490',protein_g:'55',fat_g:'19',carbs_g:'30'}]);
-  const result=await fitnessTools.getTodayNutrition('2026-10-27');
+  const result=await fitnessTools.getTodayNutrition('2026-10-27',OWNER_ID);
   assert.deepEqual(result,{status:'ok',date:'2026-10-27',consumed:{kcal:490,protein:55,fat:19,carbs:30}});
   assert.match(speak(result,{kcal:2370,protein:190,fat:70,carbs:245},'protein'),/Осталось 135/);
 });
 test('missing day is not zero',async()=>{
   mock([]);
-  assert.equal((await fitnessTools.getTodayNutrition('2026-10-27')).status,'missing_day');
+  assert.equal((await fitnessTools.getTodayNutrition('2026-10-27',OWNER_ID)).status,'missing_day');
 });
 test('duplicate day does not silently choose one',async()=>{
   mock([{},{ }]);
-  assert.equal((await fitnessTools.getTodayNutrition('2026-10-27')).status,'duplicate_day');
+  assert.equal((await fitnessTools.getTodayNutrition('2026-10-27',OWNER_ID)).status,'duplicate_day');
 });
 test('incomplete day is not zero',async()=>{
   mock([{kcal:null,protein_g:55,fat_g:19,carbs_g:30}]);
-  assert.equal((await fitnessTools.getTodayNutrition('2026-10-27')).status,'incomplete_day');
+  assert.equal((await fitnessTools.getTodayNutrition('2026-10-27',OWNER_ID)).status,'incomplete_day');
 });
 test('HTTP failure is not silently swallowed',async()=>{
   mock([],403);
-  await assert.rejects(fitnessTools.getTodayNutrition('2026-10-27'),/HTTP 403/);
+  await assert.rejects(fitnessTools.getTodayNutrition('2026-10-27',OWNER_ID),/HTTP 403/);
 });
 test.after(()=>{globalThis.fetch=oldFetch;if(oldUrl===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=oldUrl;if(oldKey===undefined)delete process.env.SUPABASE_SECRET_KEY;else process.env.SUPABASE_SECRET_KEY=oldKey;});
 
@@ -56,12 +57,12 @@ test('food logs take priority over stale daily summary',async()=>{
     {kcal:'200',protein_g:'8',fat_g:'2',carbs_g:'40'},
     {kcal:'100',protein_g:'4',fat_g:'1',carbs_g:'20'}
   ]);
-  const result=await fitnessTools.getTodayNutrition('2026-10-28');
+  const result=await fitnessTools.getTodayNutrition('2026-10-28',OWNER_ID);
   assert.deepEqual(result.consumed,{kcal:300,protein:12,fat:3,carbs:60});
 });
 test('missing macros in food logs are not treated as zero',async()=>{
   mock([],200,[{kcal:100,protein_g:null,fat_g:2,carbs_g:10}]);
-  assert.equal((await fitnessTools.getTodayNutrition('2026-10-28')).status,'incomplete_day');
+  assert.equal((await fitnessTools.getTodayNutrition('2026-10-28',OWNER_ID)).status,'incomplete_day');
 });
 
 test('Russian inflections work across the catalog without fuzzy substitutions',()=>{
