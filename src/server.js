@@ -117,11 +117,11 @@ async function handleCore(req) {
       return aliceResponse(req,message,false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams,unit}});
     };
     // Durable numbered selections survive Alice starting a fresh session.
-    if(/^(?:[1-9]|10|один|одна|два|три|четыре|пять|шесть|семь|восемь|девять|десять|первый|первую|второй|вторую|третий|третью|четвертый|четвертую|пятый|шестой|седьмой|восьмой|девятый|десятый|номер\s+\S+|вариант\s+\S+|запись\s+\S+|нет|отмена|отмени)[.!?\s]*$/iu.test(phrase.trim())){
+    if(/^(?:[1-9]|10|один|одна|два|три|четыре|пять|шесть|семь|восемь|девять|десять|первый|первую|второй|вторую|третий|третью|четвертый|четвертую|пятый|шестой|седьмой|восьмой|девятый|десятый|номер\s+\S+|вариант\s+\S+|запись\s+\S+|отмена выбора)[.!?\s]*$/iu.test(phrase.trim())){
       stage='load_numbered_choice';
       const choice=await fitnessTools.getVoiceChoice(id);
       if(choice){
-        if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){await fitnessTools.clearVoiceChoice(id);return aliceResponse(req,'Отменил выбор.');}
+        if(/^отмена выбора$/iu.test(phrase.trim())){await fitnessTools.clearVoiceChoice(id);return aliceResponse(req,'Отменил выбор.');}
         const number=numberedChoice(phrase);
         if(!number||number>choice.choices.length)return aliceResponse(req,'Назови номер от одного до '+choice.choices.length+'.');
         const selected=choice.choices[number-1];
