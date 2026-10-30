@@ -71,7 +71,7 @@ function auditReply(req,answer,issues) {
     outcome:issues.length||/^(?:Ошибка|Не удалось|Не могу|Не нашёл|Не нашла|База отклонила)/iu.test(String(answer?.response?.text||''))?'error':'ok',
     technical_details:issues.length?{errors:issues.slice(0,5)}:null
   };
-  // The response must not wait for the audit database.
+  // Best effort: audit failure must not change Alice's answer.
   return fitnessTools.logVoiceRequest(record).catch(error=>console.error('[FS-Voice]',BUILD,'audit_write_failed',safeErrorCode(error))).then(()=>answer);
 }
 function aliceResponse(req,text,endSession=false,state=null) {
