@@ -68,7 +68,7 @@ function auditReply(req,answer,issues) {
     request_text:String(req?.request?.original_utterance||'').slice(0,3000),
     response_text:String(answer?.response?.text||'').slice(0,4000),
     build_version:BUILD,
-    outcome:issues.length||/^(?:Ошибка|Не удалось|Не могу|Не нашёл|Не нашла|База отклонила)/iu.test(String(answer?.response?.text||''))?'error':'ok',
+    outcome:issues.length||/(?:не наш[её]л|не удалось|не могу|ошибка|ничего не (?:изменено|записано)|нет ожидающей|наш[её]л несколько|наш[её]л \d+ похожих|укажи массу|уточни)/iu.test(String(answer?.response?.text||''))?'error':'ok',
     technical_details:issues.length?{errors:issues.slice(0,5)}:null
   };
   // Best effort: audit failure must not change Alice's answer.
