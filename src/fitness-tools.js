@@ -80,7 +80,7 @@ export const fitnessTools = Object.freeze({
       const extra=row.source_extra||{};
       let kcal,protein_g,fat_g,carbs_g;
       if(extra.product_id){
-        const p=(await select('fitness','products',{select:'id,serving_basis,source_extra,kcal,protein_g,fat_g,carbs_g',id:'eq.'+extra.product_id,owner_id:'eq.'+ownerId,limit:'1'}))[0];
+        const p=(await select('fitness','products',{select:'id,name,serving_basis,source_extra,kcal,protein_g,fat_g,carbs_g',id:'eq.'+extra.product_id,owner_id:'eq.'+ownerId,limit:'1'}))[0];
         const match=p?.serving_basis?.match(/^\s*(\d+(?:[.,]\d+)?)\s*(г|мл|шт\.?|порция|порции)\s*$/iu);
         if(!match)return {status:'unsupported'};
         const basis=Number(match[1].replace(',','.'));
