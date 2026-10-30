@@ -119,7 +119,7 @@ export async function handle(req) {
       if(result.error)return aliceResponse(req,result.error);
       stage='stage_confirmation';
       await fitnessTools.stageConfirmation({aliceUserId:id,ownerId:owner.owner_id,items:result.selected.map(({name,...item})=>item)});
-      const summary=result.selected.map(x=>x.name+' '+x.grams+(x.name==='Сырник домашний'?' шт.':x.name==='Завтрак с бутербродом'?' порция':' граммов')).join(', ');
+      const summary=items.map((item,i)=>result.selected[i].name+' '+item.grams+({g:' г',ml:' мл',pcs:' шт.',portion:' порц.'}[item.unit||'g']||' г')).join(', ');
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
     // Correction of a previously logged count-based serving, not a new food entry.
