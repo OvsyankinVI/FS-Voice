@@ -126,7 +126,7 @@ async function handleCore(req) {
       }
       if(pending?.status==='dish_consumed'&&/^(да|подтверждаю|верно)$/iu.test(phrase.trim()))return aliceResponse(req,'Это блюдо уже добавлено. Повторно не записываю.');
     }
-    const savedDishCommand=stripRecipient(phrase).trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)\\s+(?:мне\\s+)?(?:блюдо\\s+)?(.+?)(?:\\s+в\\s+(?:мой\\s+)?дневник)?[.!?\\s]*$/iu);
+    const savedDishCommand=stripRecipient(phrase).trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)\s+(?:мне\s+)?(?:блюдо\s+)?(.+?)(?:\s+в\s+(?:мой\s+)?дневник)?[.!?\s]*$/iu);
     if(savedDishCommand){
       const dishName=savedDishCommand[1].trim();
       const owners=namedRecipientMatch(phrase)?recipientOf(phrase):members;
