@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.13-confirmation-safety-20261030';
+const BUILD='0.4.14-reliability-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -148,7 +148,7 @@ async function handleCore(req) {
     }
     const namedRecipient=namedRecipientMatch(phrase);
     if(namedRecipient&&!recipientOf(phrase).length)return aliceResponse(req,'Профиль '+namedRecipient[1]+' пока не подключён. Ничего не записано.');
-    const resolveItems=async(ownerId,items,forcedProduct=null)=>{
+    const resolveItems=async(ownerId,items,selectedProducts={})=>{
       const selected=[];
       for(const [itemIndex,item] of items.entries()){
         const name=stripRecipient(item.name).replace(/^(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)\s+/iu,'').replace(/\s+(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)$/iu,'').trim();
@@ -165,8 +165,8 @@ async function handleCore(req) {
         if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
         // Voice search must not enumerate indistinguishable names.
         const distinct=found.filter((entry,i,all)=>all.findIndex(other=>String(other.name).toLocaleLowerCase('ru').trim()===String(entry.name).toLocaleLowerCase('ru').trim())===i);
-        if(distinct.length>1&&!(forcedProduct&&forcedProduct.index===itemIndex))return {ambiguous:{name,index:itemIndex,options:distinct.slice(0,5)}};
-        const f=forcedProduct&&forcedProduct.index===itemIndex?forcedProduct.product:distinct[0];
+        if(distinct.length>1&&!selectedProducts[itemIndex])return {ambiguous:{name,index:itemIndex,options:distinct.slice(0,5)}};
+        const f=selectedProducts[itemIndex]||distinct[0];
         const unit=item.unit||'g';
         let amount=item.grams;
         if(unit==='g' && f.kind==='personal' && ['portion','pcs','ml'].includes(f.source_extra?.voice_unit))return {error:'Не могу записать «'+f.name+'» в граммах: в каталоге продукт измеряется в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+', а коэффициент пересчёта в граммы не указан. Скажи количество в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+'. Ничего не записано.'};
@@ -183,12 +183,12 @@ async function handleCore(req) {
       }
       return {selected};
     };
-    const prepare=async(owner,items,forcedProduct=null)=>{
-      const result=await resolveItems(owner.owner_id,items,forcedProduct);
+    const prepare=async(owner,items,selectedProducts={})=>{
+      const result=await resolveItems(owner.owner_id,items,selectedProducts);
       if(result.error)return aliceResponse(req,result.error);
       if(result.ambiguous){
         const {name,index,options}=result.ambiguous;
-        await fitnessTools.stageVoiceChoice({aliceUserId:id,ownerId:owner.owner_id,kind:'recipient',choices:options.map(x=>({product:x})),context:{items,index}});
+        await fitnessTools.stageVoiceChoice({aliceUserId:id,ownerId:owner.owner_id,kind:'recipient',choices:options.map(x=>({product:x})),context:{items,index,selectedProducts}});
         return aliceResponse(req,'Для «'+name+'» нашёл '+options.length+' '+numberForm(options.length,'вариант','варианта','вариантов')+': '+options.map((x,i)=>(i+1)+': '+x.name).join('; ')+'. Назови номер продукта. Ничего пока не записано.');
       }
       stage='stage_confirmation';
@@ -210,7 +210,7 @@ async function handleCore(req) {
         const index=productChoice.context?.index;
         await fitnessTools.clearVoiceChoice(id);
         if(!selected||!Array.isArray(items)||!Number.isInteger(index)||index<0||index>=items.length)return aliceResponse(req,'Выбор устарел. Повтори команду.');
-        return prepare(owner,items,{index,product:selected});
+        return prepare(owner,items,{...(productChoice.context.selectedProducts||{}),[index]:selected});
       }
     }
     // Correction of a previously logged count-based serving, not a new food entry.
@@ -246,7 +246,10 @@ async function handleCore(req) {
       if(mass)rest=rest.slice(0,mass.index).trim();
       if(eatenCorrection)rest='сырник домашний';
       const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?$/iu);
-      const previous=eatenCorrection?correctionOld:previousFromMass?Number(previousFromMass[1].replace(',','.')):oldMass?Number(oldMass[1].replace(',','.')):null;
+      // Deletion may specify an existing mass: "удали банан весом 200 грамм".
+      const deleteWeight=action==='delete'?rest.match(/\s+(?:(?:весом|массой)\s+)?(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|мл|миллилитр(?:ов|а)?)$/iu):null;
+      const previous=eatenCorrection?correctionOld:previousFromMass?Number(previousFromMass[1].replace(',','.')):oldMass?Number(oldMass[1].replace(',','.')):deleteWeight?Number(deleteWeight[1].replace(',','.')):null;
+      if(deleteWeight)rest=rest.slice(0,deleteWeight.index).trim();
       if(oldMass)rest=rest.slice(0,oldMass.index).trim();
       const meal=rest.match(/\s+(?:на\s+)?(завтрак|обед|ужин|перекус)(?:е|а)?$/iu);
       if(meal)rest=rest.slice(0,meal.index).trim();
