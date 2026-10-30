@@ -182,15 +182,20 @@ export async function handle(req) {
       if(action==='update'&&effectiveUnit!==rowUnit)
         return aliceResponse(req,'У этой записи другая единица измерения. Укажи количество в '+({g:'граммах',ml:'миллилитрах',pcs:'штуках',portion:'порциях'}[rowUnit]||'единицах каталога')+'.');
       stage='stage_voice_edit';
-      // The session confirmation uses the unit-aware REST editor; legacy RPC is grams-only.
+      // Preserve durable database confirmation for gram edits; other units use the session editor.
+      if(action==='delete'||(action==='update'&&rowUnit==='g'))await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
       const pieceUnit=rowUnit==='pcs';
       const unitLabel={g:' граммов',ml:' мл',pcs:' штуки',portion:' порции'}[rowUnit]||' единиц';
-      return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+unitLabel+(action==='update'?' на '+grams+unitLabel:'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams}});
+      return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+unitLabel+(action==='update'?' на '+grams+unitLabel:'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams,unit:rowUnit}});
     }
     const editPending=state.fs_edit_pending;
     if(editPending?.version===1&&editPending.alice_user_id===id){
       if(/^(нет|отмена|отмени)$/iu.test(phrase.trim()))return aliceResponse(req,'Отменил изменение.');
       if(/^(да|подтверждаю|верно)$/iu.test(phrase.trim())){
+        if(editPending.unit==='g'||editPending.action==='delete'){
+          const durable=await fitnessTools.confirmVoiceEdit(id);
+          if(durable?.status==='ok')return aliceResponse(req,'Готово! Изменение в дневнике сохранено.');
+        }
         if(!members.some(m=>m.owner_id===editPending.owner_id))return aliceResponse(req,'Дневник больше недоступен.');
         stage='edit_food';
         const result=await fitnessTools.editTodayFood({aliceUserId:id,ownerId:editPending.owner_id,logId:editPending.log_id,action:editPending.action,grams:editPending.grams});
