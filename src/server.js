@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.12-search-audit-20261030';
+const BUILD='0.4.13-confirmation-safety-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -287,14 +287,12 @@ async function handleCore(req) {
     if(editPending?.version===1&&editPending.alice_user_id===id){
       if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){await fitnessTools.cancelConfirmation(id);return aliceResponse(req,'Отменил изменение.');}
       if(/^(да|подтверждаю|верно)$/iu.test(phrase.trim())){
-        {
-          const durable=await fitnessTools.confirmVoiceEdit(id);
-          if(durable?.status==='ok')return aliceResponse(req,'Готово! Изменение в дневнике сохранено.');
-        }
-        if(!members.some(m=>m.owner_id===editPending.owner_id))return aliceResponse(req,'Дневник больше недоступен.');
-        stage='edit_food';
-        const result=await fitnessTools.editTodayFood({aliceUserId:id,ownerId:editPending.owner_id,logId:editPending.log_id,action:editPending.action,grams:editPending.grams});
-        return aliceResponse(req,result?.status==='ok'?'Готово! '+(editPending.action==='delete'?'Удалил продукт из дневника.':'Изменил массу продукта в дневнике.'):'Не удалось изменить запись: '+(result?.status||'не найдена')+'.');
+        stage='confirm_voice_edit';
+        const durable=await fitnessTools.confirmVoiceEdit(id);
+        if(durable?.status==='ok')return aliceResponse(req,'Готово! '+(editPending.action==='delete'?'Удалил продукт из дневника.':'Изменил массу продукта в дневнике.'));
+        if(durable?.status==='expired')return aliceResponse(req,'Подтверждение устарело. Повтори команду.');
+        if(durable?.status==='unsupported')return aliceResponse(req,'Эту запись пока нельзя изменить по голосу.');
+        return aliceResponse(req,'Нет ожидающего изменения для подтверждения. Ничего не изменено.');
       }
     }
     if(/^(да|подтверждаю|верно)$/iu.test(phrase.trim())){
