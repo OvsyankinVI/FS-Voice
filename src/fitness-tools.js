@@ -192,6 +192,9 @@ export const fitnessTools = Object.freeze({
     if (!t || !keys.every(k => Number(Array.isArray(t[k]) ? t[k][0] : t[k]) > 0)) throw new Error('Invalid nutrition targets');
     return Object.fromEntries(keys.map(k => [k, Number(Array.isArray(t[k]) ? t[k][0] : t[k])]));
   },
+  stageSavedDish({aliceUserId,ownerId,dishId,mealType}) {return rpc('fitness','voice_stage_saved_dish',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_dish_id:dishId,p_meal_type:mealType});},
+  confirmSavedDish(aliceUserId) {return rpc('fitness','voice_confirm_saved_dish',{p_alice_user_id:aliceUserId});},
+  async pendingSavedDish(aliceUserId) {const rows=await select('fitness','voice_pending_confirmations',{select:'status,owner_id,items,expires_at',alice_user_id:'eq.'+aliceUserId,limit:'1'});return rows[0]||null;},
   async findSavedDishes(ownerId,query) {
     if(!/^[0-9a-f-]{36}$/i.test(String(ownerId||'')))throw new Error('Explicit owner required');
     const clean=String(query||'').toLocaleLowerCase('ru').replace(/ё/g,'е').trim();
