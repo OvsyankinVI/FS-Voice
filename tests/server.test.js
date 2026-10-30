@@ -152,15 +152,15 @@ test('piece edit requires confirmation and recalculates personal food',async()=>
  const old={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY,write:process.env.FS_VOICE_WRITE_ENABLED,fetch:globalThis.fetch};
  process.env.SUPABASE_URL='https://example.supabase.co';process.env.SUPABASE_SECRET_KEY='sb_secret_test';process.env.FS_VOICE_WRITE_ENABLED='true';
  const owner='ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',logId='11111111-1111-4111-8111-111111111111',productId='22222222-2222-4222-8222-222222222222';
- let patched=null;
+ let staged=null,confirmed=0;
  const json=x=>new Response(JSON.stringify(x),{status:200,headers:{'Content-Type':'application/json'}});
  globalThis.fetch=async(input,opts={})=>{
   const path=new URL(String(input)).pathname;
   if(path.endsWith('/voice_profiles'))return json([{owner_id:owner,display_name:'Влад',enabled:true}]);
-  if(path.endsWith('/food_logs')&&opts.method==='PATCH'){patched=JSON.parse(opts.body);return json([{id:logId}]);}
   if(path.endsWith('/food_logs'))return json([{id:logId,owner_id:owner,day:new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),display_name:'Сырник домашний',meal_type:'Завтрак',source_extra:{product_id:productId,grams:2,unit:'pcs'}}]);
   if(path.endsWith('/products'))return json([{id:productId,name:'Сырник домашний',serving_basis:'1 г',source_extra:{voice_unit:'pcs',voice_basis_amount:1},kcal:120,protein_g:10,fat_g:5,carbs_g:15}]);
-  if(path.endsWith('/rpc/voice_confirm_edit'))return json({status:'missing'});
+  if(path.endsWith('/rpc/voice_stage_edit')){staged=JSON.parse(opts.body);return new Response(null,{status:204});}
+  if(path.endsWith('/rpc/voice_confirm_edit')){confirmed++;return json({status:'ok'});}
   throw Error('Unexpected request '+path);
  };
  const send=async(command,state)=>JSON.parse((await handler({...base,body:JSON.stringify({version:'1.0',session:{new:false,user:{user_id:'test-user'},message_id:1,session_id:'test-session'},request:{original_utterance:command,command},...(state?{state}: {})})})).body);
@@ -169,13 +169,11 @@ test('piece edit requires confirmation and recalculates personal food',async()=>
   assert.match(first.response.text,/Изменить для Влад/);
   assert.equal(first.session_state.fs_edit_pending.unit,'pcs');
   assert.equal(first.session_state.fs_edit_pending.grams,3);
-  assert.equal(patched,null);
+  assert.equal(staged.p_grams,3);
+  assert.equal(staged.p_log_id,logId);
   const second=await send('да',{session:first.session_state});
   assert.match(second.response.text,/Готово!/);
-  assert.equal(patched.source_extra.grams,3);
-  assert.equal(patched.source_extra.unit,'pcs');
-  assert.equal(patched.kcal,360);
-  assert.equal(patched.protein_g,30);
+  assert.equal(confirmed,1);
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_WRITE_ENABLED',old.write]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
