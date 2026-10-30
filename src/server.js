@@ -7,8 +7,11 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.5-unit-edits-20261030';
+const BUILD='0.4.6-voice-audit-20261030';
+const auditErrors=new Map();
 function diagnostic(stage,error){
+  const context=auditErrors.get('current');
+  if(context)context.push({stage,code:safeErrorCode(error),message:String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+|https?:\/\/\S+|[a-zA-Z0-9_-]{80,})/g,'[REDACTED]').slice(0,280)});
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
 }
@@ -52,13 +55,31 @@ async function loadTargets() {
   if(!response.ok) throw new Error('Targets unavailable');
   return targetsFromSite(await response.json());
 }
+function auditReply(req,answer,issues) {
+  if(process.env.FS_VOICE_AUDIT_ENABLED!=='true')return answer;
+  const userId=req?.session?.user?.user_id||req?.session?.user_id;
+  if(!userId||!allowed.includes(userId))return answer;
+  const record={
+    request_id:randomUUID(),
+    alice_user_id:userId,
+    session_id:String(req?.session?.session_id||'').slice(0,128)||null,
+    message_id:Number.isInteger(req?.session?.message_id)?req.session.message_id:null,
+    request_text:String(req?.request?.original_utterance||'').slice(0,3000),
+    response_text:String(answer?.response?.text||'').slice(0,4000),
+    build_version:BUILD,
+    outcome:issues.length?'error':'ok',
+    technical_details:issues.length?{errors:issues.slice(0,5)}:null
+  };
+  // The response must not wait for the audit database.
+  return fitnessTools.logVoiceRequest(record).catch(error=>console.error('[FS-Voice]',BUILD,'audit_write_failed',safeErrorCode(error))).then(()=>answer);
+}
 function aliceResponse(req,text,endSession=false,state=null) {
   const answer={version:req.version||'1.0',session:req.session,response:{text,tts:text,end_session:endSession}};
   if(state){answer.session_state=state;answer.user_state_update=state;}
   return answer;
 }
 
-export async function handle(req) {
+async function handleCore(req) {
   const id=req?.session?.user?.user_id || req?.session?.user_id;
   if(!allowed.length || !id || !allowed.includes(id))
     return aliceResponse(req,'Доступ к этому дневнику не разрешён.',true);
@@ -271,6 +292,16 @@ export async function handle(req) {
     diagnostic(stage,error);
     if(stage==='confirm_confirmation'||stage==='save_batch'){const detail=String(error?.message||'').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\\s+\\S+)/g,'[REDACTED]').slice(0,220);return aliceResponse(req,'Ошибка записи, этап '+stage+'. База отклонила операцию, запись не подтверждена. Диагностика: '+detail+'.');}
     return aliceResponse(req,'Ошибка Джарвиса. Этап: '+stage+'. Тип: '+safeErrorCode(error)+'. Версия: '+BUILD+'.');
+  }
+}
+export async function handle(req) {
+  const issues=[];
+  auditErrors.set('current',issues);
+  try {
+    const answer=await handleCore(req);
+    return await auditReply(req,answer,issues);
+  } finally {
+    auditErrors.delete('current');
   }
 }
 const server=http.createServer(async (request,response)=>{
