@@ -64,6 +64,13 @@ export function rankPersonalFoods(rows,query){
   return scored.filter(x=>x.score>=scored[0].score-2).map(x=>x.row);
 }
 export const fitnessTools = Object.freeze({
+  async logVoiceRequest(record) {
+    const {base,key}=credentials();
+    const headers={apikey:key,'Content-Profile':'fitness','Content-Type':'application/json',Prefer:'return=minimal'};
+    if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
+    const response=await fetch(new URL('/rest/v1/voice_request_logs',base),{method:'POST',headers,body:JSON.stringify(record),signal:AbortSignal.timeout(1500)});
+    if(!response.ok)throw new Error('Voice audit HTTP '+response.status);
+  },
 
   listTodayFoodLogs(ownerId,day) {return select('fitness','food_logs',{select:'id,display_name,original_text,meal_type,meal_time,occurred_at,source_extra',owner_id:'eq.'+ownerId,day:'eq.'+day,order:'occurred_at.desc',limit:'200'});},
   async editTodayFood({ownerId,logId,action,grams}) {
