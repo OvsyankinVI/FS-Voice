@@ -193,6 +193,7 @@ export const fitnessTools = Object.freeze({
     return Object.fromEntries(keys.map(k => [k, Number(Array.isArray(t[k]) ? t[k][0] : t[k])]));
   },
   stageSavedDish({aliceUserId,ownerId,dishId,mealType}) {return rpc('fitness','voice_stage_saved_dish',{p_alice_user_id:aliceUserId,p_owner:ownerId,p_dish_id:dishId,p_meal_type:mealType});},
+  cancelSavedDish(aliceUserId) {return rpc('fitness','voice_cancel_saved_dish',{p_alice_user_id:aliceUserId});},
   confirmSavedDish(aliceUserId) {return rpc('fitness','voice_confirm_saved_dish',{p_alice_user_id:aliceUserId});},
   async pendingSavedDish(aliceUserId) {const rows=await select('fitness','voice_pending_confirmations',{select:'status,owner_id,items,expires_at',alice_user_id:'eq.'+aliceUserId,limit:'1'});return rows[0]||null;},
   async findSavedDishes(ownerId,query) {
