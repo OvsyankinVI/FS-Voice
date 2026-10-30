@@ -108,6 +108,19 @@ async function handleCore(req) {
       return members.filter(m=>m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е').startsWith(root));
     };
     const stripRecipient=utterance=>String(utterance||'').replace(recipientNamePattern,' ').replace(/\s+/g,' ').trim();
+    const savedDishCommand=stripRecipient(phrase).trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)\\s+(?:мне\\s+)?(?:блюдо\\s+)?(.+?)(?:\\s+в\\s+(?:мой\\s+)?дневник)?[.!?\\s]*$/iu);
+    if(savedDishCommand){
+      const dishName=savedDishCommand[1].trim();
+      const owners=namedRecipientMatch(phrase)?recipientOf(phrase):members;
+      if(owners.length===1){
+        stage='find_saved_dish';
+        const found=await fitnessTools.findSavedDishes(owners[0].owner_id,dishName);
+        if(found.length===1){
+          const dish=found[0],sum=key=>dish.items.reduce((a,x)=>a+Number(x[key]||0),0);
+          return aliceResponse(req,'Нашёл сохранённое блюдо «'+dish.name+'»: '+Math.round(sum('kcal'))+' килокалорий, белки '+Math.round(sum('protein_g'))+' граммов, жиры '+Math.round(sum('fat_g'))+', углеводы '+Math.round(sum('carbs_g'))+'. Голосовое добавление пока готовится, запись не сделана.');
+        }
+      }
+    }
     const numberForm=(n,one,few,many)=>{const k=Math.abs(Number(n));return k%10===1&&k%100!==11?one:k%10>=2&&k%10<=4&&(k%100<12||k%100>14)?few:many;};
     const numberedChoice=(utterance)=>{
       const cleaned=String(utterance).toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[.!?]/g,'').trim();
