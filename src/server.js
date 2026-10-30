@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.6-voice-audit-20261030';
+const BUILD='0.4.7-voice-fixes-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -106,7 +106,7 @@ async function handleCore(req) {
     const resolveItems=async(ownerId,items)=>{
       const selected=[];
       for(const item of items){
-        const name=item.name.replace(/^(?:владу|владиславу|ангелине|ангелину)\s+/i,'').replace(/\s+(?:владу|владиславу|ангелине|ангелину)$/i,'').trim();
+        const name=item.name.replace(/^(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)\s+/iu,'').replace(/\s+(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)$/iu,'').trim();
         console.info('[FS-Voice]',BUILD,'search_product',name.length);
         stage='search_personal';
         let personal=await fitnessTools.searchPersonalFoods(ownerId,name);
@@ -145,7 +145,7 @@ async function handleCore(req) {
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
     // Correction of a previously logged count-based serving, not a new food entry.
-    const countCorrection=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е').match(/^(?:я\\s+)?(?:съел|съела|ел|ела)\\s+не\\s+(\\d{1,3})\\s+сырник(?:а|ов|и)?,?\\s+а\\s+(\\d{1,3})(?:\\s+сырник(?:а|ов|и)?)?[.!?]*$/u);
+    const countCorrection=null; // The general correction parser below handles this durably.
     if(countCorrection){
       const previous=Number(countCorrection[1]),grams=Number(countCorrection[2]);
       if(previous<1||grams<1||grams>100)return aliceResponse(req,'Укажи количество сырников от 1 до 100.');
@@ -166,7 +166,7 @@ async function handleCore(req) {
     const editMatch=correctionPhrase.match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\s+(?:(?:вес|массу)\s+)?(.+?)\s*$/iu);
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
-      let rest=editMatch[2].replace(/\s+из\s+(?:сегодняшнего\s+)?дневника.*$/iu,'').trim();
+      let rest=editMatch[2].replace(/\s+(?:(?:из|в)\s+)?(?:сегодняшнего\s+)?дневника.*$/iu,'').replace(/\s+(?:там\s+)?(?:из|с)\s+сегодняшнего\s+дневника.*$/iu,'').trim();
       const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?\s*)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?$/iu);
       const rawAmount=mass?Number(mass[1].replace(',','.')):null;
       const statedUnit=mass?.[0]?.match(/(?:мл|миллилитр(?:ов|а)?|литр(?:ов|а)?|\bл\b|порци(?:я|и|й|ю)|шт\.?|штук(?:и|у)?|грамм(?:ов|а)?|\bг\b)\s*$/iu)?.[0]?.trim()||'';
@@ -189,11 +189,11 @@ async function handleCore(req) {
       stage='find_food_entry';
       const rows=await fitnessTools.listTodayFoodLogs(owner.owner_id,todayMoscow());
       const norm=x=>String(x||'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[^a-zа-я0-9]+/gi,' ').trim();
-      const stem=x=>norm(x).split(' ').filter(Boolean).map(w=>w.slice(0,Math.max(4,w.length-2)));
+      const stem=x=>norm(x).split(' ').filter(Boolean).map(w=>w.slice(0,Math.max(3,w.length-2)));
       const words=stem(rest);
       const found=rows.filter(row=>{
         const name=norm(row.display_name||row.original_text);
-        const matches=words.every(w=>name.includes(w));
+        const matches=words.every(w=>name.split(' ').some(token=>token.startsWith(w)||w.startsWith(token.slice(0,Math.max(3,token.length-2)))));
         const weight=Number(row.source_extra?.grams);
         return matches&&(previous===null||weight===previous)&&(!meal||norm(row.meal_type).includes(norm(meal[1]).slice(0,4)));
       });
@@ -205,17 +205,16 @@ async function handleCore(req) {
       if(action==='update'&&effectiveUnit!==rowUnit)
         return aliceResponse(req,'У этой записи другая единица измерения. Укажи количество в '+({g:'граммах',ml:'миллилитрах',pcs:'штуках',portion:'порциях'}[rowUnit]||'единицах каталога')+'.');
       stage='stage_voice_edit';
-      // Preserve durable database confirmation for gram edits; other units use the session editor.
-      if(action==='delete'||(action==='update'&&rowUnit==='g'))await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
-      const pieceUnit=rowUnit==='pcs';
+      // Every edit is staged durably: Alice often drops session_state between turns.
+      await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
       const unitLabel={g:' граммов',ml:' мл',pcs:' штуки',portion:' порции'}[rowUnit]||' единиц';
       return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+unitLabel+(action==='update'?' на '+grams+unitLabel:'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams,unit:rowUnit}});
     }
     const editPending=state.fs_edit_pending;
     if(editPending?.version===1&&editPending.alice_user_id===id){
-      if(/^(нет|отмена|отмени)$/iu.test(phrase.trim()))return aliceResponse(req,'Отменил изменение.');
+      if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){await fitnessTools.cancelConfirmation(id);return aliceResponse(req,'Отменил изменение.');}
       if(/^(да|подтверждаю|верно)$/iu.test(phrase.trim())){
-        if(editPending.unit==='g'||editPending.action==='delete'){
+        {
           const durable=await fitnessTools.confirmVoiceEdit(id);
           if(durable?.status==='ok')return aliceResponse(req,'Готово! Изменение в дневнике сохранено.');
         }
