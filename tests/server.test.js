@@ -199,7 +199,7 @@ test('audit records voice request and exact reply without affecting Alice respon
   assert.equal(recorded.response_text,answer.response.text);
   assert.equal(recorded.outcome,'ok');
   assert.equal(recorded.message_id,9);
-  assert.match(recorded.build_version,/voice-fixes/);
+  assert.match(recorded.build_version,/numbered-choices/);
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_AUDIT_ENABLED',old.audit]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
@@ -213,13 +213,14 @@ test('unknown named recipient is rejected rather than written to default owner',
  globalThis.fetch=async(input)=>{
   const path=new URL(String(input)).pathname;calls.push(path);
   if(path.endsWith('/voice_profiles'))return new Response(JSON.stringify([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]),{status:200});
+  if(path.endsWith('/products'))return new Response('[]',{status:200});
   throw Error('Unexpected request '+path);
  };
  try{
   const req={version:'1.0',session:{new:false,user:{user_id:'test-user'}},request:{original_utterance:'добавь 50 грамм хлеб для Ангелины'}};
   const result=JSON.parse((await handler({...base,body:JSON.stringify(req)})).body);
   assert.match(result.response.text,/пока не подключён/);
-  assert.deepEqual(calls,['/rest/v1/voice_profiles']);
+  assert.ok(!calls.some(path=>path.endsWith('/voice_stage_confirmation')||path.endsWith('/voice_add_batch')||path.endsWith('/food_logs')));
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
