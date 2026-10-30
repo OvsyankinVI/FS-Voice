@@ -72,6 +72,25 @@ export const fitnessTools = Object.freeze({
     if(!response.ok)throw new Error('Voice audit HTTP '+response.status);
   },
 
+  async getVoiceChoice(aliceUserId) {
+    const rows=await select('fitness','voice_pending_choices',{select:'owner_id,kind,choices,context,expires_at',alice_user_id:'eq.'+aliceUserId,limit:'1'});
+    return rows[0]&&new Date(rows[0].expires_at)>new Date()?rows[0]:null;
+  },
+  async stageVoiceChoice({aliceUserId,ownerId,kind,choices,context}) {
+    const {base,key}=credentials();
+    const headers={apikey:key,'Content-Profile':'fitness','Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'};
+    if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
+    const res=await fetch(new URL('/rest/v1/voice_pending_choices?on_conflict=alice_user_id',base),{method:'POST',headers,body:JSON.stringify({alice_user_id:aliceUserId,owner_id:ownerId,kind,choices,context,created_at:new Date().toISOString(),expires_at:new Date(Date.now()+5*60000).toISOString()}),signal:AbortSignal.timeout(3500)});
+    if(!res.ok)throw new Error('Voice choice stage HTTP '+res.status);
+  },
+  async clearVoiceChoice(aliceUserId) {
+    const {base,key}=credentials();
+    const headers={apikey:key,'Content-Profile':'fitness'};
+    if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
+    const url=new URL('/rest/v1/voice_pending_choices',base);url.searchParams.set('alice_user_id','eq.'+aliceUserId);
+    const res=await fetch(url,{method:'DELETE',headers,signal:AbortSignal.timeout(3500)});
+    if(!res.ok)throw new Error('Voice choice clear HTTP '+res.status);
+  },
   listTodayFoodLogs(ownerId,day) {return select('fitness','food_logs',{select:'id,display_name,original_text,meal_type,meal_time,occurred_at,source_extra',owner_id:'eq.'+ownerId,day:'eq.'+day,order:'occurred_at.desc',limit:'200'});},
   async editTodayFood({ownerId,logId,action,grams}) {
     if(process.env.FS_VOICE_WRITE_ENABLED!=='true')throw new Error('Voice writes disabled');
