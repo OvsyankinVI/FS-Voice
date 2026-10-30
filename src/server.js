@@ -98,7 +98,7 @@ async function handleCore(req) {
     stage='route_command';
     const state=req?.state?.session?.fs_edit_pending||req?.state?.session?.fs_batch_pending||req?.state?.session?.fs_batch_recipient ? req.state.session : (req?.state?.user||req?.state?.session||{});
     console.info('[FS-Voice]',BUILD,'confirmation_state',state.fs_batch_pending?'pending':state.fs_batch_recipient?'recipient':'none');
-    const recipientNamePattern=/(?:^|\\s)(?:для|в|к)\\s+(ангелин(?:а|ы|е|у|ой)?|влад(?:а|у|ом)?|владислав(?:а|у|ом)?)(?=\\s|[.,!?]|$)/iu;
+    const recipientNamePattern=/(?:^|\s)(?:для|в|к)\s+(ангелин(?:а|ы|е|у|ой)?|влад(?:а|у|ом)?|владислав(?:а|у|ом)?)(?=\s|[.,!?]|$)/iu;
     const namedRecipientMatch=utterance=>String(utterance||'').toLocaleLowerCase('ru').replace(/ё/g,'е').match(recipientNamePattern);
     const recipientOf=utterance=>{
       const matched=namedRecipientMatch(utterance);
@@ -107,7 +107,7 @@ async function handleCore(req) {
       const root=name.startsWith('ангелин')?'ангелин':name.startsWith('влад')?'влад':name;
       return members.filter(m=>m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е').startsWith(root));
     };
-    const stripRecipient=utterance=>String(utterance||'').replace(recipientNamePattern,' ').replace(/\\s+/g,' ').trim();
+    const stripRecipient=utterance=>String(utterance||'').replace(recipientNamePattern,' ').replace(/\s+/g,' ').trim();
     const numberForm=(n,one,few,many)=>{const k=Math.abs(Number(n));return k%10===1&&k%100!==11?one:k%10>=2&&k%10<=4&&(k%100<12||k%100>14)?few:many;};
     const numberedChoice=(utterance)=>{
       const cleaned=String(utterance).toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[.!?]/g,'').trim();
