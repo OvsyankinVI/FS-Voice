@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.7-voice-fixes-20261030';
+const BUILD='0.4.8-numbered-choices-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -103,6 +103,43 @@ async function handleCore(req) {
       const stem=name.startsWith('ангелин')?'ангелин':name.startsWith('влад')?'влад':name;
       return utterance.toLocaleLowerCase('ru').replace(/ё/g,'е').includes(stem);
     });
+    const numberedChoice=(utterance)=>{
+      const cleaned=String(utterance).toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[.!?]/g,'').trim();
+      const map={'1':1,'один':1,'одна':1,'первый':1,'первую':1,'первое':1,'2':2,'два':2,'второй':2,'вторую':2,'второе':2,'3':3,'три':3,'третий':3,'третью':3,'третье':3,'4':4,'четыре':4,'четвертый':4,'четвертую':4,'5':5,'пять':5,'пятый':5,'6':6,'шесть':6,'шестой':6,'7':7,'семь':7,'седьмой':7,'8':8,'восемь':8,'восьмой':8,'9':9,'девять':9,'девятый':9,'10':10,'десять':10,'десятый':10};
+      return map[cleaned.replace(/^(?:номер|вариант|запись)\s+/u,'')]||null;
+    };
+    const unitName=u=>({g:'граммов',ml:'миллилитров',pcs:'штук',portion:'порций'}[u]||'единиц');
+    const stageEdit=async(owner,row,action,grams)=>{
+      const unit=row.source_extra?.unit||(/сырник/iu.test(row.display_name||'')?'pcs':/^(?:завтрак с бутербродом|кофе с банановым молоком)$/iu.test(row.display_name||'')?'portion':'g');
+      stage='stage_voice_edit';
+      await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
+      const message=(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams??'количество неизвестно')+' '+unitName(unit)+(action==='update'?' на '+grams+' '+unitName(unit):'')+'? Скажи да или нет.';
+      return aliceResponse(req,message,false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams,unit}});
+    };
+    // Durable numbered selections survive Alice starting a fresh session.
+    if(/^(?:[1-9]|10|один|одна|два|три|четыре|пять|шесть|семь|восемь|девять|десять|первый|первую|второй|вторую|третий|третью|четвертый|четвертую|пятый|шестой|седьмой|восьмой|девятый|десятый|номер\s+\S+|вариант\s+\S+|запись\s+\S+|нет|отмена|отмени)[.!?\s]*$/iu.test(phrase.trim())){
+      stage='load_numbered_choice';
+      const choice=await fitnessTools.getVoiceChoice(id);
+      if(choice){
+        if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){await fitnessTools.clearVoiceChoice(id);return aliceResponse(req,'Отменил выбор.');}
+        const number=numberedChoice(phrase);
+        if(!number||number>choice.choices.length)return aliceResponse(req,'Назови номер от одного до '+choice.choices.length+'.');
+        const selected=choice.choices[number-1];
+        await fitnessTools.clearVoiceChoice(id);
+        if(choice.kind==='edit'){
+          const owner=members.find(m=>m.owner_id===choice.owner_id);
+          if(!owner)return aliceResponse(req,'Дневник больше недоступен.');
+          const rows=await fitnessTools.listTodayFoodLogs(owner.owner_id,todayMoscow());
+          const row=rows.find(x=>x.id===selected.id);
+          if(!row)return aliceResponse(req,'Выбранная запись уже отсутствует. Повтори команду.');
+          const unit=row.source_extra?.unit||'g';
+          if(choice.context.action==='update'&&choice.context.unit&&choice.context.unit!==unit)return aliceResponse(req,'Единица измерения выбранной записи не совпадает. Повтори команду.');
+          return stageEdit(owner,row,choice.context.action,choice.context.grams);
+        }
+      }
+    }
+    const namedRecipient=String(phrase).toLocaleLowerCase('ru').replace(/ё/g,'е').match(/\b(?:для|в|к)\s+(ангелины|ангелине|ангелину|влада|владу|владислава|владиславу)\b/u);
+    if(namedRecipient&&!recipientOf(phrase).length)return aliceResponse(req,'Профиль '+namedRecipient[1]+' пока не подключён. Ничего не записано.');
     const resolveItems=async(ownerId,items)=>{
       const selected=[];
       for(const item of items){
@@ -198,17 +235,16 @@ async function handleCore(req) {
         return matches&&(previous===null||weight===previous)&&(!meal||norm(row.meal_type).includes(norm(meal[1]).slice(0,4)));
       });
       if(!found.length)return aliceResponse(req,'Не нашёл подходящую запись за сегодня. Ничего не изменено.');
-      if(found.length>1)return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+found.slice(0,4).map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams||'масса неизвестна')+' граммов, '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Уточни массу или приём пищи. Ничего не изменено.');
+      if(found.length>1){
+        const options=found.slice(0,10);
+        await fitnessTools.stageVoiceChoice({aliceUserId:id,ownerId:owner.owner_id,kind:'edit',choices:options.map(x=>({id:x.id})),context:{action,grams,unit:editUnit==='l'?'ml':editUnit}});
+        return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+options.map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams??'количество неизвестно')+' '+unitName(x.source_extra?.unit||'g')+', '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Назови номер записи: первый, второй и так далее.');
+      }
       const row=found[0];
-      const rowUnit=row.source_extra?.unit||(/сырник/iu.test(row.display_name||'')?'pcs':/^(?:завтрак с бутербродом|кофе с банановым молоком)$/iu.test(row.display_name||'')?'portion':'g');
+      const rowUnit=row.source_extra?.unit||'g';
       const effectiveUnit=editUnit===null?rowUnit:editUnit==='l'?'ml':editUnit;
-      if(action==='update'&&effectiveUnit!==rowUnit)
-        return aliceResponse(req,'У этой записи другая единица измерения. Укажи количество в '+({g:'граммах',ml:'миллилитрах',pcs:'штуках',portion:'порциях'}[rowUnit]||'единицах каталога')+'.');
-      stage='stage_voice_edit';
-      // Every edit is staged durably: Alice often drops session_state between turns.
-      await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
-      const unitLabel={g:' граммов',ml:' мл',pcs:' штуки',portion:' порции'}[rowUnit]||' единиц';
-      return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+unitLabel+(action==='update'?' на '+grams+unitLabel:'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams,unit:rowUnit}});
+      if(action==='update'&&effectiveUnit!==rowUnit)return aliceResponse(req,'У этой записи другая единица измерения. Укажи количество в '+unitName(rowUnit)+'.');
+      return stageEdit(owner,row,action,grams);
     }
     const editPending=state.fs_edit_pending;
     if(editPending?.version===1&&editPending.alice_user_id===id){
