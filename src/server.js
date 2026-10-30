@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.8-numbered-choices-20261030';
+const BUILD='0.4.9-choice-precision-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -68,7 +68,7 @@ function auditReply(req,answer,issues) {
     request_text:String(req?.request?.original_utterance||'').slice(0,3000),
     response_text:String(answer?.response?.text||'').slice(0,4000),
     build_version:BUILD,
-    outcome:issues.length||/(?:не наш[её]л|не удалось|не могу|ошибка|ничего не (?:изменено|записано)|нет ожидающей|наш[её]л несколько|наш[её]л \d+ похожих|укажи массу|уточни)/iu.test(String(answer?.response?.text||''))?'error':'ok',
+    outcome:issues.length||/(?:не наш[её]л|не удалось|не могу|ошибка|ничего не (?:изменено|записано)|нет ожидающей)/iu.test(String(answer?.response?.text||''))?'error':/(?:наш[её]л \d+ похож|назови номер записи|назови номер от|уточни|скажи да или нет|кому записать)/iu.test(String(answer?.response?.text||''))?'clarification':'ok',
     technical_details:issues.length?{errors:issues.slice(0,5)}:null
   };
   // Best effort: audit failure must not change Alice's answer.
@@ -98,22 +98,28 @@ async function handleCore(req) {
     stage='route_command';
     const state=req?.state?.session?.fs_edit_pending||req?.state?.session?.fs_batch_pending||req?.state?.session?.fs_batch_recipient ? req.state.session : (req?.state?.user||req?.state?.session||{});
     console.info('[FS-Voice]',BUILD,'confirmation_state',state.fs_batch_pending?'pending':state.fs_batch_recipient?'recipient':'none');
-    const recipientOf=(utterance)=>members.filter(m=>{
-      const name=m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е');
-      const stem=name.startsWith('ангелин')?'ангелин':name.startsWith('влад')?'влад':name;
-      return utterance.toLocaleLowerCase('ru').replace(/ё/g,'е').includes(stem);
-    });
+    const recipientNamePattern=/(?:^|\\s)(?:для|в|к)\\s+(ангелин(?:а|ы|е|у|ой)?|влад(?:а|у|ом)?|владислав(?:а|у|ом)?)(?=\\s|[.,!?]|$)/iu;
+    const namedRecipientMatch=utterance=>String(utterance||'').toLocaleLowerCase('ru').replace(/ё/g,'е').match(recipientNamePattern);
+    const recipientOf=utterance=>{
+      const matched=namedRecipientMatch(utterance);
+      if(!matched)return [];
+      const name=matched[1];
+      const root=name.startsWith('ангелин')?'ангелин':name.startsWith('влад')?'влад':name;
+      return members.filter(m=>m.display_name.toLocaleLowerCase('ru').replace(/ё/g,'е').startsWith(root));
+    };
+    const stripRecipient=utterance=>String(utterance||'').replace(recipientNamePattern,' ').replace(/\\s+/g,' ').trim();
+    const numberForm=(n,one,few,many)=>{const k=Math.abs(Number(n));return k%10===1&&k%100!==11?one:k%10>=2&&k%10<=4&&(k%100<12||k%100>14)?few:many;};
     const numberedChoice=(utterance)=>{
       const cleaned=String(utterance).toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[.!?]/g,'').trim();
       const map={'1':1,'один':1,'одна':1,'первый':1,'первую':1,'первое':1,'2':2,'два':2,'второй':2,'вторую':2,'второе':2,'3':3,'три':3,'третий':3,'третью':3,'третье':3,'4':4,'четыре':4,'четвертый':4,'четвертую':4,'5':5,'пять':5,'пятый':5,'6':6,'шесть':6,'шестой':6,'7':7,'семь':7,'седьмой':7,'8':8,'восемь':8,'восьмой':8,'9':9,'девять':9,'девятый':9,'10':10,'десять':10,'десятый':10};
       return map[cleaned.replace(/^(?:номер|вариант|запись)\s+/u,'')]||null;
     };
-    const unitName=u=>({g:'граммов',ml:'миллилитров',pcs:'штук',portion:'порций'}[u]||'единиц');
+    const unitName=(u,n)=>u==='g'?numberForm(n,'грамм','грамма','граммов'):u==='ml'?numberForm(n,'миллилитр','миллилитра','миллилитров'):u==='pcs'?numberForm(n,'штука','штуки','штук'):u==='portion'?numberForm(n,'порция','порции','порций'):'единиц';
     const stageEdit=async(owner,row,action,grams)=>{
       const unit=row.source_extra?.unit||(/сырник/iu.test(row.display_name||'')?'pcs':/^(?:завтрак с бутербродом|кофе с банановым молоком)$/iu.test(row.display_name||'')?'portion':'g');
       stage='stage_voice_edit';
       await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
-      const message=(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams??'количество неизвестно')+' '+unitName(unit)+(action==='update'?' на '+grams+' '+unitName(unit):'')+'? Скажи да или нет.';
+      const message=(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams??'количество неизвестно')+' '+unitName(unit,row.source_extra?.grams)+(action==='update'?' на '+grams+' '+unitName(unit,grams):'')+'? Скажи да или нет.';
       return aliceResponse(req,message,false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams,unit}});
     };
     // Durable numbered selections survive Alice starting a fresh session.
@@ -138,12 +144,12 @@ async function handleCore(req) {
         }
       }
     }
-    const namedRecipient=String(phrase).toLocaleLowerCase('ru').replace(/ё/g,'е').match(/(?:^|\s)(?:для|в|к)\s+(ангелины|ангелине|ангелину|влада|владу|владислава|владиславу)(?=\s|[.,!?]|$)/u);
+    const namedRecipient=namedRecipientMatch(phrase);
     if(namedRecipient&&!recipientOf(phrase).length)return aliceResponse(req,'Профиль '+namedRecipient[1]+' пока не подключён. Ничего не записано.');
     const resolveItems=async(ownerId,items)=>{
       const selected=[];
       for(const item of items){
-        const name=item.name.replace(/^(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)\s+/iu,'').replace(/\s+(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)$/iu,'').trim();
+        const name=stripRecipient(item.name).replace(/^(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)\s+/iu,'').replace(/\s+(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)$/iu,'').trim();
         console.info('[FS-Voice]',BUILD,'search_product',name.length);
         stage='search_personal';
         let personal=await fitnessTools.searchPersonalFoods(ownerId,name);
@@ -226,11 +232,16 @@ async function handleCore(req) {
       stage='find_food_entry';
       const rows=await fitnessTools.listTodayFoodLogs(owner.owner_id,todayMoscow());
       const norm=x=>String(x||'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[^a-zа-я0-9]+/gi,' ').trim();
-      const stem=x=>norm(x).split(' ').filter(Boolean).map(w=>w.slice(0,Math.max(3,w.length-2)));
-      const words=stem(rest);
+      const normalizeWord=w=>{
+        const word=norm(w);
+        if(/^банан(?:а|у|ом|ы|ов)?$/.test(word))return 'банан';
+        if(/^сырник(?:а|и|ов|ами)?$/.test(word))return 'сырник';
+        return word.replace(/(ами|ями|ого|ему|ыми|ими|ов|ев|ой|ая|ое|ые|ий|ый|ая|а|у|ы|и|е)$/u,'');
+      };
+      const words=norm(rest).split(' ').filter(Boolean).map(normalizeWord);
       const found=rows.filter(row=>{
-        const name=norm(row.display_name||row.original_text);
-        const matches=words.every(w=>name.split(' ').some(token=>token.startsWith(w)||w.startsWith(token.slice(0,Math.max(3,token.length-2)))));
+        const tokens=norm(row.display_name||row.original_text).split(' ').filter(Boolean).map(normalizeWord);
+        const matches=words.every(w=>tokens.includes(w));
         const weight=Number(row.source_extra?.grams);
         return matches&&(previous===null||weight===previous)&&(!meal||norm(row.meal_type).includes(norm(meal[1]).slice(0,4)));
       });
@@ -238,7 +249,7 @@ async function handleCore(req) {
       if(found.length>1){
         const options=found.slice(0,10);
         await fitnessTools.stageVoiceChoice({aliceUserId:id,ownerId:owner.owner_id,kind:'edit',choices:options.map(x=>({id:x.id})),context:{action,grams,unit:editUnit==='l'?'ml':editUnit}});
-        return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+options.map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams??'количество неизвестно')+' '+unitName(x.source_extra?.unit||'g')+', '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Назови номер записи: первый, второй и так далее.');
+        return aliceResponse(req,'Нашёл '+found.length+' '+numberForm(found.length,'похожую запись','похожие записи','похожих записей')+': '+options.map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams??'количество неизвестно')+' '+unitName(x.source_extra?.unit||'g',x.source_extra?.grams)+', '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Назови номер записи: первый, второй и так далее.');
       }
       const row=found[0];
       const rowUnit=row.source_extra?.unit||'g';
