@@ -7,7 +7,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.4-unit-owner-20261029';
+const BUILD='0.4.5-unit-edits-20261030';
 function diagnostic(stage,error){
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -140,7 +140,7 @@ export async function handle(req) {
     const correctionOld=eatenCorrection?Number(eatenCorrection[1]):null;
     const correctionNew=eatenCorrection?Number(eatenCorrection[2]):null;
     if(eatenCorrection&&(correctionOld<1||correctionNew<1||correctionOld>100||correctionNew>100))return aliceResponse(req,'Укажи количество сырников от одного до ста.');
-    const correctionPhrase=eatenCorrection?'измени сырник домашний с '+correctionOld+' на '+correctionNew:phrase.trim();
+    const correctionPhrase=eatenCorrection?'измени сырник домашний с '+correctionOld+' на '+correctionNew+' штуки':phrase.trim();
     const editMatch=correctionPhrase.match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(измени(?:ть)?|поменяй|исправь|удали(?:ть)?|убери)\s+(?:(?:вес|массу)\s+)?(.+?)\s*$/iu);
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
@@ -153,7 +153,7 @@ export async function handle(req) {
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
       if(mass)rest=rest.slice(0,mass.index).trim();
       if(eatenCorrection)rest='сырник домашний';
-      const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г)?$/iu);
+      const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?$/iu);
       const previous=eatenCorrection?correctionOld:oldMass?Number(oldMass[1].replace(',','.')):null;
       if(oldMass)rest=rest.slice(0,oldMass.index).trim();
       const meal=rest.match(/\s+(?:на\s+)?(завтрак|обед|ужин|перекус)(?:е|а)?$/iu);
