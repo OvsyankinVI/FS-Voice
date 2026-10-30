@@ -76,6 +76,7 @@ test('Alice durable two-turn confirmation without state saves once and can save 
   if(path.endsWith('/voice_profiles'))return json([{owner_id:'ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2',display_name:'Влад'}]);
   if(path.endsWith('/products'))return json([{id:'4f5f6ac7-a6da-44a3-85cd-8160951a2b54',name:'Harry’s American Sandwich хлеб',serving_basis:'100 г'}]);
   if(path.endsWith('/rpc/voice_stage_confirmation')){staged=JSON.parse(opts.body);return new Response(null,{status:204});}
+  if(path.endsWith('/rpc/voice_stage_edit'))return new Response(null,{status:204});
   if(path.endsWith('/rpc/voice_confirm_edit'))return json({status:'missing'});
   if(path.endsWith('/rpc/voice_confirm_confirmation')){
    if(!staged)return json({status:'missing'});
@@ -200,7 +201,7 @@ test('audit records voice request and exact reply without affecting Alice respon
   assert.equal(recorded.response_text,answer.response.text);
   assert.equal(recorded.outcome,'ok');
   assert.equal(recorded.message_id,9);
-  assert.match(recorded.build_version,/voice-audit/);
+  assert.match(recorded.build_version,/voice-fixes/);
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_AUDIT_ENABLED',old.audit]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
