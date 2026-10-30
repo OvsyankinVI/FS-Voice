@@ -138,7 +138,7 @@ async function handleCore(req) {
         }
       }
     }
-    const namedRecipient=String(phrase).toLocaleLowerCase('ru').replace(/ё/g,'е').match(/\b(?:для|в|к)\s+(ангелины|ангелине|ангелину|влада|владу|владислава|владиславу)\b/u);
+    const namedRecipient=String(phrase).toLocaleLowerCase('ru').replace(/ё/g,'е').match(/(?:^|\s)(?:для|в|к)\s+(ангелины|ангелине|ангелину|влада|владу|владислава|владиславу)(?=\s|[.,!?]|$)/u);
     if(namedRecipient&&!recipientOf(phrase).length)return aliceResponse(req,'Профиль '+namedRecipient[1]+' пока не подключён. Ничего не записано.');
     const resolveItems=async(ownerId,items)=>{
       const selected=[];
