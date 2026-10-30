@@ -199,7 +199,7 @@ test('audit records voice request and exact reply without affecting Alice respon
   assert.equal(recorded.response_text,answer.response.text);
   assert.equal(recorded.outcome,'ok');
   assert.equal(recorded.message_id,9);
-  assert.match(recorded.build_version,/confirmation-safety/);
+  assert.match(recorded.build_version,/reliability/);
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_AUDIT_ENABLED',old.audit]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
@@ -221,6 +221,34 @@ test('unknown named recipient is rejected rather than written to default owner',
   const result=JSON.parse((await handler({...base,body:JSON.stringify(req)})).body);
   assert.match(result.response.text,/пока не подключён/);
   assert.ok(!calls.some(path=>path.endsWith('/voice_stage_confirmation')||path.endsWith('/voice_add_batch')||path.endsWith('/food_logs')));
+ }finally{
+  globalThis.fetch=old.fetch;
+  for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
+ }
+});
+
+test('0.4.14: deletion mass matches exact banana without altering another',async()=>{
+ const old={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY,fetch:globalThis.fetch};
+ process.env.SUPABASE_URL='https://example.supabase.co';process.env.SUPABASE_SECRET_KEY='sb_secret_test';
+ const owner='ce19fbb3-2e4e-4f15-b25e-6b0433d5cca2';let staged=null;
+ const json=x=>new Response(JSON.stringify(x),{status:200,headers:{'Content-Type':'application/json'}});
+ globalThis.fetch=async(input,opts={})=>{
+  const path=new URL(String(input)).pathname;
+  if(path.endsWith('/voice_profiles'))return json([{owner_id:owner,display_name:'Влад'}]);
+  if(path.endsWith('/food_logs'))return json([
+   {id:'11111111-1111-4111-8111-111111111111',display_name:'Банан свежий (без кожуры)',source_extra:{grams:200,unit:'g'}},
+   {id:'22222222-2222-4222-8222-222222222222',display_name:'Банан свежий (без кожуры)',source_extra:{grams:300,unit:'g'}}
+  ]);
+  if(path.endsWith('/rpc/voice_stage_edit')){staged=JSON.parse(opts.body);return new Response(null,{status:204});}
+  throw Error('Unexpected request '+path);
+ };
+ try{
+  const command='удали банан весом 200 грамм из сегодняшнего дневника';
+  const req={version:'1.0',session:{new:false,user:{user_id:'test-user'}},request:{original_utterance:command,command}};
+  const response=JSON.parse((await handler({...base,body:JSON.stringify(req)})).body);
+  assert.match(response.response.text,/Удалить для Влад/);
+  assert.equal(staged.p_log_id,'11111111-1111-4111-8111-111111111111');
+  assert.equal(staged.p_action,'delete');
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
