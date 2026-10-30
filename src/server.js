@@ -145,8 +145,11 @@ export async function handle(req) {
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
       let rest=editMatch[2].replace(/\s+из\s+(?:сегодняшнего\s+)?дневника.*$/iu,'').trim();
-      const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю))\s*)?)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю))?$/iu);
-      const grams=mass?Number(mass[1].replace(',','.')):null;
+      const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)\s*)?)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю))?$/iu);
+      const rawAmount=mass?Number(mass[1].replace(',','.')):null;
+      const statedUnit=mass?.[0]?.match(/(?:мл|миллилитр(?:ов|а)?|литр(?:ов|а)?|\bл\b|порци(?:я|и|й|ю)|шт\.?|штук(?:и|у)?|грамм(?:ов|а)?|\bг\b)\s*$/iu)?.[0]?.trim()||'';
+      const editUnit=/^(?:л|литр)/iu.test(statedUnit)?'l':/^(?:мл|миллилитр)/iu.test(statedUnit)?'ml':/^порци/iu.test(statedUnit)?'portion':/^(?:шт|штук)/iu.test(statedUnit)?'pcs':'g';
+      const grams=rawAmount*(editUnit==='l'?1000:1);
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
       if(mass)rest=rest.slice(0,mass.index).trim();
       if(eatenCorrection)rest='сырник домашний';
@@ -174,18 +177,15 @@ export async function handle(req) {
       if(!found.length)return aliceResponse(req,'Не нашёл подходящую запись за сегодня. Ничего не изменено.');
       if(found.length>1)return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+found.slice(0,4).map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams||'масса неизвестна')+' граммов, '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Уточни массу или приём пищи. Ничего не изменено.');
       const row=found[0];
-      // Do not let the legacy gram-only edit RPC silently interpret pieces/servings as grams.
-      const editUnit=/порци/iu.test(mass?.[0]||'')?'portion':/(?:шт|штук)/iu.test(mass?.[0]||'')?'pcs':'g';
-      const isPiece=/^сырник домашний$/iu.test(row.display_name||'');
-      const isPortion=/^(?:завтрак с бутербродом|кофе с банановым молоком)$/iu.test(row.display_name||'');
-      if(action==='update' && (editUnit!=='g'||isPiece||isPortion))
-        return aliceResponse(req,'Пока не могу изменить «'+row.display_name+'» в '+(editUnit==='pcs'?'штуках':editUnit==='portion'?'порциях':'граммах')+': серверное изменение количества ещё рассчитывается только в граммах. Чтобы не испортить КБЖУ, запись не меняю. Дождись обновления расчёта порций и штук.');
-      if(action==='update' && /(?:мл|миллилитр|литр)/iu.test(mass?.[0]||''))
-        return aliceResponse(req,'Пока нельзя изменить объём в миллилитрах: серверный пересчёт для объёмов ещё не готов. Запись не изменена.');
+      const rowUnit=row.source_extra?.unit||(/сырник/iu.test(row.display_name||'')?'pcs':/^(?:завтрак с бутербродом|кофе с банановым молоком)$/iu.test(row.display_name||'')?'portion':'g');
+      const effectiveUnit=editUnit==='l'?'ml':editUnit;
+      if(action==='update'&&effectiveUnit!==rowUnit)
+        return aliceResponse(req,'У этой записи другая единица измерения. Укажи количество в '+({g:'граммах',ml:'миллилитрах',pcs:'штуках',portion:'порциях'}[rowUnit]||'единицах каталога')+'.');
       stage='stage_voice_edit';
-      await fitnessTools.stageVoiceEdit({aliceUserId:id,ownerId:owner.owner_id,logId:row.id,action,grams});
-      const pieceUnit=/^сырник домашний$/iu.test(row.display_name||'');
-      return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+(pieceUnit?' штуки':' граммов')+(action==='update'?' на '+grams+(pieceUnit?' штуки':' граммов'):'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams}});
+      // The session confirmation uses the unit-aware REST editor; legacy RPC is grams-only.
+      const pieceUnit=rowUnit==='pcs';
+      const unitLabel={g:' граммов',ml:' мл',pcs:' штуки',portion:' порции'}[rowUnit]||' единиц';
+      return aliceResponse(req,(action==='delete'?'Удалить':'Изменить')+' для '+owner.display_name+': '+row.display_name+', '+(row.source_extra?.grams||'масса неизвестна')+unitLabel+(action==='update'?' на '+grams+unitLabel:'')+'? Скажи да или нет.',false,{fs_edit_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,log_id:row.id,action,grams}});
     }
     const editPending=state.fs_edit_pending;
     if(editPending?.version===1&&editPending.alice_user_id===id){
