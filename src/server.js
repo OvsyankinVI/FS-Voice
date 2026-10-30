@@ -148,13 +148,14 @@ export async function handle(req) {
       const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?\s*)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?$/iu);
       const rawAmount=mass?Number(mass[1].replace(',','.')):null;
       const statedUnit=mass?.[0]?.match(/(?:мл|миллилитр(?:ов|а)?|литр(?:ов|а)?|\bл\b|порци(?:я|и|й|ю)|шт\.?|штук(?:и|у)?|грамм(?:ов|а)?|\bг\b)\s*$/iu)?.[0]?.trim()||'';
-      const editUnit=eatenCorrection?'pcs':/^(?:л|литр)/iu.test(statedUnit)?'l':/^(?:мл|миллилитр)/iu.test(statedUnit)?'ml':/^порци/iu.test(statedUnit)?'portion':/^(?:шт|штук)/iu.test(statedUnit)?'pcs':'g';
+      const editUnit=eatenCorrection?'pcs':!statedUnit?null:/^(?:л|литр)/iu.test(statedUnit)?'l':/^(?:мл|миллилитр)/iu.test(statedUnit)?'ml':/^порци/iu.test(statedUnit)?'portion':/^(?:шт|штук)/iu.test(statedUnit)?'pcs':'g';
       const grams=rawAmount*(editUnit==='l'?1000:1);
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
+      const previousFromMass=mass?.[0]?.match(/\bсо?\s+(\d+(?:[.,]\d+)?)/iu);
       if(mass)rest=rest.slice(0,mass.index).trim();
       if(eatenCorrection)rest='сырник домашний';
       const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?$/iu);
-      const previous=eatenCorrection?correctionOld:oldMass?Number(oldMass[1].replace(',','.')):null;
+      const previous=eatenCorrection?correctionOld:previousFromMass?Number(previousFromMass[1].replace(',','.')):oldMass?Number(oldMass[1].replace(',','.')):null;
       if(oldMass)rest=rest.slice(0,oldMass.index).trim();
       const meal=rest.match(/\s+(?:на\s+)?(завтрак|обед|ужин|перекус)(?:е|а)?$/iu);
       if(meal)rest=rest.slice(0,meal.index).trim();
@@ -178,7 +179,7 @@ export async function handle(req) {
       if(found.length>1)return aliceResponse(req,'Нашёл '+found.length+' похожих записей: '+found.slice(0,4).map((x,i)=>(i+1)+': '+x.display_name+', '+(x.source_extra?.grams||'масса неизвестна')+' граммов, '+(x.meal_type||'приём пищи не указан')).join('; ')+'. Уточни массу или приём пищи. Ничего не изменено.');
       const row=found[0];
       const rowUnit=row.source_extra?.unit||(/сырник/iu.test(row.display_name||'')?'pcs':/^(?:завтрак с бутербродом|кофе с банановым молоком)$/iu.test(row.display_name||'')?'portion':'g');
-      const effectiveUnit=editUnit==='l'?'ml':editUnit;
+      const effectiveUnit=editUnit===null?rowUnit:editUnit==='l'?'ml':editUnit;
       if(action==='update'&&effectiveUnit!==rowUnit)
         return aliceResponse(req,'У этой записи другая единица измерения. Укажи количество в '+({g:'граммах',ml:'миллилитрах',pcs:'штуках',portion:'порциях'}[rowUnit]||'единицах каталога')+'.');
       stage='stage_voice_edit';
