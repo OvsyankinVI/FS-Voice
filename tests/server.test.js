@@ -180,3 +180,29 @@ test('piece edit requires confirmation and recalculates personal food',async()=>
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_WRITE_ENABLED',old.write]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
  }
 });
+
+
+test('audit records voice request and exact reply without affecting Alice response',async()=>{
+ const old={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SECRET_KEY,audit:process.env.FS_VOICE_AUDIT_ENABLED,fetch:globalThis.fetch};
+ process.env.SUPABASE_URL='https://example.supabase.co';process.env.SUPABASE_SECRET_KEY='sb_secret_test';process.env.FS_VOICE_AUDIT_ENABLED='true';
+ let recorded=null;
+ globalThis.fetch=async(input,opts={})=>{
+  const path=new URL(String(input)).pathname;
+  if(path.endsWith('/voice_request_logs')){recorded=JSON.parse(opts.body);return new Response(null,{status:201});}
+  throw Error('Unexpected audit mock request '+path);
+ };
+ try{
+  const req={version:'1.0',session:{new:false,user:{user_id:'test-user'},session_id:'audit-session',message_id:9},request:{original_utterance:'версия',command:'версия'}};
+  const result=await handler({...base,body:JSON.stringify(req)});
+  assert.equal(result.statusCode,200);
+  const answer=JSON.parse(result.body);
+  assert.equal(recorded.request_text,'версия');
+  assert.equal(recorded.response_text,answer.response.text);
+  assert.equal(recorded.outcome,'ok');
+  assert.equal(recorded.message_id,9);
+  assert.match(recorded.build_version,/voice-audit/);
+ }finally{
+  globalThis.fetch=old.fetch;
+  for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_AUDIT_ENABLED',old.audit]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
+ }
+});
