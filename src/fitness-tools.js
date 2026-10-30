@@ -192,6 +192,17 @@ export const fitnessTools = Object.freeze({
     if (!t || !keys.every(k => Number(Array.isArray(t[k]) ? t[k][0] : t[k]) > 0)) throw new Error('Invalid nutrition targets');
     return Object.fromEntries(keys.map(k => [k, Number(Array.isArray(t[k]) ? t[k][0] : t[k])]));
   },
+  async findSavedDishes(ownerId,query) {
+    if(!/^[0-9a-f-]{36}$/i.test(String(ownerId||'')))throw new Error('Explicit owner required');
+    const clean=String(query||'').toLocaleLowerCase('ru').replace(/ё/g,'е').trim();
+    if(clean.length<2||clean.length>160)return [];
+    const dishes=await select('fitness','saved_dishes',{select:'id,name',owner_id:'eq.'+ownerId,limit:'500'});
+    const matches=dishes.filter(d=>String(d.name||'').toLocaleLowerCase('ru').replace(/ё/g,'е')===clean);
+    if(!matches.length)return [];
+    const ids=matches.map(d=>d.id);
+    const items=await select('fitness','saved_dish_items',{select:'dish_id,product_name,quantity_g,kcal,protein_g,fat_g,carbs_g',owner_id:'eq.'+ownerId,dish_id:'in.('+ids.join(',')+')',limit:'1000'});
+    return matches.map(d=>({...d,items:items.filter(x=>x.dish_id===d.id)})).filter(d=>d.items.length);
+  },
   async getTodayNutrition(day,ownerId) {
     if(!/^[0-9a-f-]{36}$/i.test(String(ownerId||'')))throw new Error('Explicit nutrition owner required');
     const rows=await select('fitness','food_logs',{owner_id:'eq.'+ownerId,day:'eq.'+day,select:'kcal,protein_g,fat_g,carbs_g',limit:'1000'});
