@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
 
@@ -8,9 +9,9 @@ const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
 const BUILD='0.4.6-voice-audit-20261030';
-const auditErrors=new Map();
+const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
-  const context=auditErrors.get('current');
+  const context=auditContext.getStore();
   if(context)context.push({stage,code:safeErrorCode(error),message:String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+|https?:\/\/\S+|[a-zA-Z0-9_-]{80,})/g,'[REDACTED]').slice(0,280)});
   const message=String(error?.message||error||'unknown').replace(/(sb_secret_[a-zA-Z0-9_-]+|Bearer\s+\S+)/g,'[REDACTED]');
   console.error('[FS-Voice]',BUILD,stage,error?.name||'Error',message);
@@ -67,7 +68,7 @@ function auditReply(req,answer,issues) {
     request_text:String(req?.request?.original_utterance||'').slice(0,3000),
     response_text:String(answer?.response?.text||'').slice(0,4000),
     build_version:BUILD,
-    outcome:issues.length?'error':'ok',
+    outcome:issues.length||/^(?:Ошибка|Не удалось|Не могу|Не нашёл|Не нашла|База отклонила)/iu.test(String(answer?.response?.text||''))?'error':'ok',
     technical_details:issues.length?{errors:issues.slice(0,5)}:null
   };
   // The response must not wait for the audit database.
@@ -296,13 +297,10 @@ async function handleCore(req) {
 }
 export async function handle(req) {
   const issues=[];
-  auditErrors.set('current',issues);
-  try {
+  return auditContext.run(issues,async()=>{
     const answer=await handleCore(req);
-    return await auditReply(req,answer,issues);
-  } finally {
-    auditErrors.delete('current');
-  }
+    return auditReply(req,answer,issues);
+  });
 }
 const server=http.createServer(async (request,response)=>{
   const url=new URL(request.url,'http://localhost');
