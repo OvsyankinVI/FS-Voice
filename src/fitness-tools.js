@@ -80,17 +80,23 @@ export const fitnessTools = Object.freeze({
       const extra=row.source_extra||{};
       let kcal,protein_g,fat_g,carbs_g;
       if(extra.product_id){
-        const p=(await select('fitness','products',{select:'id,serving_basis,kcal,protein_g,fat_g,carbs_g',id:'eq.'+extra.product_id,owner_id:'eq.'+ownerId,limit:'1'}))[0];
-        if(!p||!/^\\s*\\d+(?:[.,]\\d+)?\\s*г\\s*$/iu.test(p.serving_basis))return {status:'unsupported'};
-        const basis=Number(p.serving_basis.match(/\\d+(?:[.,]\\d+)?/)[0].replace(',','.'));
-        if(!basis||['kcal','protein_g','fat_g','carbs_g'].some(k=>p[k]==null))return {status:'unsupported'};
+        const p=(await select('fitness','products',{select:'id,serving_basis,source_extra,kcal,protein_g,fat_g,carbs_g',id:'eq.'+extra.product_id,owner_id:'eq.'+ownerId,limit:'1'}))[0];
+        const match=p?.serving_basis?.match(/^\s*(\d+(?:[.,]\d+)?)\s*(г|мл|шт\.?|порция|порции)\s*$/iu);
+        if(!match)return {status:'unsupported'};
+        const basis=Number(match[1].replace(',','.'));
+        const basisUnit=/^г$/iu.test(match[2])?'g':/^мл$/iu.test(match[2])?'ml':/^шт/iu.test(match[2])?'pcs':'portion';
+        const voiceUnit=p.source_extra?.voice_unit||basisUnit;
+        const legacy=p.serving_basis.trim()==='1 г'&&((p.name==='Сырник домашний'&&voiceUnit==='pcs')||(p.name==='Завтрак с бутербродом'&&voiceUnit==='portion'));
+        const actualUnit=extra.unit||voiceUnit;
+        if(actualUnit!==voiceUnit||(!legacy&&basisUnit!==voiceUnit)||['kcal','protein_g','fat_g','carbs_g'].some(k=>p[k]==null)||!basis)return {status:'unsupported'};
         [kcal,protein_g,fat_g,carbs_g]=['kcal','protein_g','fat_g','carbs_g'].map(k=>Math.round(Number(p[k])*Number(grams)/basis*100)/100);
+        body={kcal,protein_g,fat_g,carbs_g,original_text:(row.display_name||'Продукт')+' — '+grams+' '+({g:'г',ml:'мл',pcs:'шт.',portion:'порц.'}[voiceUnit]),source_extra:{...extra,grams:Number(grams),unit:voiceUnit}};
       }else if(extra.fdc_id){
         const p=(await select('fitness','usda_foods',{select:'fdc_id,kcal_per_100g,protein_per_100g,fat_per_100g,carbs_per_100g',fdc_id:'eq.'+extra.fdc_id,limit:'1'}))[0];
         if(!p||['kcal_per_100g','protein_per_100g','fat_per_100g','carbs_per_100g'].some(k=>p[k]==null))return {status:'unsupported'};
         [kcal,protein_g,fat_g,carbs_g]=['kcal_per_100g','protein_per_100g','fat_per_100g','carbs_per_100g'].map(k=>Math.round(Number(p[k])*Number(grams)/100*100)/100);
       }else return {status:'unsupported'};
-      body={kcal,protein_g,fat_g,carbs_g,original_text:(row.display_name||'Продукт')+' — '+grams+' г',source_extra:{...extra,grams:Number(grams)}};
+      body??={kcal,protein_g,fat_g,carbs_g,original_text:(row.display_name||'Продукт')+' — '+grams+' г',source_extra:{...extra,grams:Number(grams)}};
     }
     const {base,key}=credentials();
     const url=new URL('/rest/v1/food_logs',base);
