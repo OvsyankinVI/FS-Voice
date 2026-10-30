@@ -114,7 +114,7 @@ async function handleCore(req) {
       const pending=await fitnessTools.pendingSavedDish(id);
       if(pending?.status==='dish_pending'){
         if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){
-          await fitnessTools.cancelConfirmation(id);
+          await fitnessTools.cancelSavedDish(id);
           return aliceResponse(req,'Отменил добавление блюда. Ничего не записано.');
         }
         if(process.env.FS_VOICE_WRITE_ENABLED!=='true')return aliceResponse(req,'Запись на сервере пока выключена. Ничего не добавлено.');
