@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.9-choice-precision-20261030';
+const BUILD='0.4.10-choice-cancellation-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -286,10 +286,16 @@ async function handleCore(req) {
       if(result?.status==='expired')return aliceResponse(req,'Подтверждение устарело. Назови продукт и массу ещё раз.');
       return aliceResponse(req,'Нет ожидающей записи для подтверждения. Назови продукт и массу ещё раз.');
     }
-    if(/^(нет|отмена|отмени)$/i.test(phrase.trim())){
+    if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){
+      stage='cancel_numbered_choice';
+      const choice=await fitnessTools.getVoiceChoice(id);
+      if(choice){
+        await fitnessTools.clearVoiceChoice(id);
+        return aliceResponse(req,choice.kind==='edit'?'Отменил выбор записи. Ничего не изменено.':'Отменил выбор. Ничего не записано.');
+      }
       stage='cancel_confirmation';
       const cancelled=await fitnessTools.cancelConfirmation(id);
-      return aliceResponse(req,cancelled?'Отменил запись.':'Нет ожидающей записи для отмены.');
+      return aliceResponse(req,cancelled?'Отменил операцию. Ничего не изменено.':'Нет ожидающей операции для отмены.');
     }
     const question=state.fs_batch_recipient;
     if(question?.version===1&&question.alice_user_id===id){
