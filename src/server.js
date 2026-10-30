@@ -210,7 +210,7 @@ async function handleCore(req) {
       const editUnit=eatenCorrection?'pcs':!statedUnit?null:/^(?:л|литр)/iu.test(statedUnit)?'l':/^(?:мл|миллилитр)/iu.test(statedUnit)?'ml':/^порци/iu.test(statedUnit)?'portion':/^(?:шт|штук)/iu.test(statedUnit)?'pcs':'g';
       const grams=rawAmount*(editUnit==='l'?1000:1);
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
-      const previousFromMass=mass?.[0]?.match(/\bсо?\s+(\d+(?:[.,]\d+)?)/iu);
+      const previousFromMass=mass?.[0]?.match(/(?:^|\s)со?\s+(\d+(?:[.,]\d+)?)/iu);
       if(mass)rest=rest.slice(0,mass.index).trim();
       if(eatenCorrection)rest='сырник домашний';
       const oldMass=rest.match(/\s+со?\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?$/iu);
