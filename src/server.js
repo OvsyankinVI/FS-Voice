@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.11-batch-reliability-20261030';
+const BUILD='0.4.12-search-audit-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -68,7 +68,7 @@ function auditReply(req,answer,issues) {
     request_text:String(req?.request?.original_utterance||'').slice(0,3000),
     response_text:String(answer?.response?.text||'').slice(0,4000),
     build_version:BUILD,
-    outcome:issues.length||/(?:не наш[её]л|не удалось|не могу|ошибка|ничего не (?:изменено|записано)|нет ожидающей)/iu.test(String(answer?.response?.text||''))?'error':/(?:наш[её]л \d+ похож|назови номер записи|назови номер от|уточни|скажи да или нет|кому записать)/iu.test(String(answer?.response?.text||''))?'clarification':'ok',
+    outcome:issues.length?'error':/(?:отменил|ничего не изменено|ничего не записано)/iu.test(String(answer?.response?.text||''))&&/отменил/iu.test(String(answer?.response?.text||''))?'ok':/(?:наш[её]л \d+ похож|назови номер|уточни|скажи да или нет|кому записать)/iu.test(String(answer?.response?.text||''))?'clarification':/(?:не наш[её]л|не удалось|не могу|ошибка|нет ожидающей|пока не подключ[её]н)/iu.test(String(answer?.response?.text||''))?'error':'ok',
     technical_details:issues.length?{errors:issues.slice(0,5)}:null
   };
   // Best effort: audit failure must not change Alice's answer.
@@ -163,8 +163,10 @@ async function handleCore(req) {
         stage='search_usda';
         const found=personal.length?personal:await fitnessTools.searchFoods(name);
         if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
-        if(found.length>1&&!(forcedProduct&&forcedProduct.index===itemIndex))return {ambiguous:{name,index:itemIndex,options:found.slice(0,10)}};
-        const f=forcedProduct&&forcedProduct.index===itemIndex?forcedProduct.product:found[0];
+        // Voice search must not enumerate indistinguishable names.
+        const distinct=found.filter((entry,i,all)=>all.findIndex(other=>String(other.name).toLocaleLowerCase('ru').trim()===String(entry.name).toLocaleLowerCase('ru').trim())===i);
+        if(distinct.length>1&&!(forcedProduct&&forcedProduct.index===itemIndex))return {ambiguous:{name,index:itemIndex,options:distinct.slice(0,5)}};
+        const f=forcedProduct&&forcedProduct.index===itemIndex?forcedProduct.product:distinct[0];
         const unit=item.unit||'g';
         let amount=item.grams;
         if(unit==='g' && f.kind==='personal' && ['portion','pcs','ml'].includes(f.source_extra?.voice_unit))return {error:'Не могу записать «'+f.name+'» в граммах: в каталоге продукт измеряется в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+', а коэффициент пересчёта в граммы не указан. Скажи количество в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+'. Ничего не записано.'};
