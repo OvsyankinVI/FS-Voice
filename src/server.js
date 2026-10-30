@@ -8,7 +8,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.10-choice-cancellation-20261030';
+const BUILD='0.4.11-batch-reliability-20261030';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -131,7 +131,9 @@ async function handleCore(req) {
         const number=numberedChoice(phrase);
         if(!number||number>choice.choices.length)return aliceResponse(req,'Назови номер от одного до '+choice.choices.length+'.');
         const selected=choice.choices[number-1];
-        await fitnessTools.clearVoiceChoice(id);
+        if(choice.kind==='recipient'){
+          // Product selection is handled after prepare() is initialized.
+        } else await fitnessTools.clearVoiceChoice(id);
         if(choice.kind==='edit'){
           const owner=members.find(m=>m.owner_id===choice.owner_id);
           if(!owner)return aliceResponse(req,'Дневник больше недоступен.');
@@ -146,9 +148,9 @@ async function handleCore(req) {
     }
     const namedRecipient=namedRecipientMatch(phrase);
     if(namedRecipient&&!recipientOf(phrase).length)return aliceResponse(req,'Профиль '+namedRecipient[1]+' пока не подключён. Ничего не записано.');
-    const resolveItems=async(ownerId,items)=>{
+    const resolveItems=async(ownerId,items,forcedProduct=null)=>{
       const selected=[];
-      for(const item of items){
+      for(const [itemIndex,item] of items.entries()){
         const name=stripRecipient(item.name).replace(/^(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)\s+/iu,'').replace(/\s+(?:для\s+)?(?:влада|владу|владислава|владиславу|ангелины|ангелине|ангелину)$/iu,'').trim();
         console.info('[FS-Voice]',BUILD,'search_product',name.length);
         stage='search_personal';
@@ -161,8 +163,8 @@ async function handleCore(req) {
         stage='search_usda';
         const found=personal.length?personal:await fitnessTools.searchFoods(name);
         if(!found.length)return {error:'Не нашёл продукт «'+name+'». Ничего не записано.'};
-        if(found.length>1)return {error:'Для «'+name+'» нашёл несколько вариантов: '+found.slice(0,3).map(x=>x.name).join(', ')+'. Уточни название. Ничего не записано.'};
-        const f=found[0];
+        if(found.length>1&&!(forcedProduct&&forcedProduct.index===itemIndex))return {ambiguous:{name,index:itemIndex,options:found.slice(0,10)}};
+        const f=forcedProduct&&forcedProduct.index===itemIndex?forcedProduct.product:found[0];
         const unit=item.unit||'g';
         let amount=item.grams;
         if(unit==='g' && f.kind==='personal' && ['portion','pcs','ml'].includes(f.source_extra?.voice_unit))return {error:'Не могу записать «'+f.name+'» в граммах: в каталоге продукт измеряется в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+', а коэффициент пересчёта в граммы не указан. Скажи количество в '+({portion:'порциях',pcs:'штуках',ml:'миллилитрах'})[f.source_extra.voice_unit]+'. Ничего не записано.'};
@@ -179,14 +181,36 @@ async function handleCore(req) {
       }
       return {selected};
     };
-    const prepare=async(owner,items)=>{
-      const result=await resolveItems(owner.owner_id,items);
+    const prepare=async(owner,items,forcedProduct=null)=>{
+      const result=await resolveItems(owner.owner_id,items,forcedProduct);
       if(result.error)return aliceResponse(req,result.error);
+      if(result.ambiguous){
+        const {name,index,options}=result.ambiguous;
+        await fitnessTools.stageVoiceChoice({aliceUserId:id,ownerId:owner.owner_id,kind:'recipient',choices:options.map(x=>({product:x})),context:{items,index}});
+        return aliceResponse(req,'Для «'+name+'» нашёл '+options.length+' '+numberForm(options.length,'вариант','варианта','вариантов')+': '+options.map((x,i)=>(i+1)+': '+x.name).join('; ')+'. Назови номер продукта. Ничего пока не записано.');
+      }
       stage='stage_confirmation';
       await fitnessTools.stageConfirmation({aliceUserId:id,ownerId:owner.owner_id,items:result.selected.map(({name,...item})=>item)});
       const summary=items.map((item,i)=>result.selected[i].name+' '+item.grams+({g:' г',ml:' мл',pcs:' шт.',portion:' порц.'}[item.unit||'g']||' г')).join(', ');
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
+    // Resolve a persisted ambiguous food selection before creating any confirmation.
+    if(numberedChoice(phrase)){
+      stage='load_product_choice';
+      const productChoice=await fitnessTools.getVoiceChoice(id);
+      if(productChoice?.kind==='recipient'){
+        const n=numberedChoice(phrase);
+        if(n>productChoice.choices.length)return aliceResponse(req,'Назови номер от одного до '+productChoice.choices.length+'.');
+        const owner=members.find(m=>m.owner_id===productChoice.owner_id);
+        if(!owner){await fitnessTools.clearVoiceChoice(id);return aliceResponse(req,'Дневник больше недоступен.');}
+        const selected=productChoice.choices[n-1]?.product;
+        const items=productChoice.context?.items;
+        const index=productChoice.context?.index;
+        await fitnessTools.clearVoiceChoice(id);
+        if(!selected||!Array.isArray(items)||!Number.isInteger(index)||index<0||index>=items.length)return aliceResponse(req,'Выбор устарел. Повтори команду.');
+        return prepare(owner,items,{index,product:selected});
+      }
+    }
     // Correction of a previously logged count-based serving, not a new food entry.
     const countCorrection=null; // The general correction parser below handles this durably.
     if(countCorrection){
