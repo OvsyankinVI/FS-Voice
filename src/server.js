@@ -145,10 +145,10 @@ export async function handle(req) {
     if(editMatch){
       const action=/^(удал|убер)/iu.test(editMatch[1])?'delete':'update';
       let rest=editMatch[2].replace(/\s+из\s+(?:сегодняшнего\s+)?дневника.*$/iu,'').trim();
-      const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)\s*)?)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю))?$/iu);
+      const mass=rest.match(/\s+(?:со?\s+\d+(?:[.,]\d+)?\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?\s*)?(?:на|до)\s+(\d+(?:[.,]\d+)?)\s*(?:грамм(?:ов|а)?|г|шт\.?|штук(?:и|у)?|порци(?:я|и|й|ю)|мл|миллилитр(?:ов|а)?|л|литр(?:ов|а)?)?$/iu);
       const rawAmount=mass?Number(mass[1].replace(',','.')):null;
       const statedUnit=mass?.[0]?.match(/(?:мл|миллилитр(?:ов|а)?|литр(?:ов|а)?|\bл\b|порци(?:я|и|й|ю)|шт\.?|штук(?:и|у)?|грамм(?:ов|а)?|\bг\b)\s*$/iu)?.[0]?.trim()||'';
-      const editUnit=/^(?:л|литр)/iu.test(statedUnit)?'l':/^(?:мл|миллилитр)/iu.test(statedUnit)?'ml':/^порци/iu.test(statedUnit)?'portion':/^(?:шт|штук)/iu.test(statedUnit)?'pcs':'g';
+      const editUnit=eatenCorrection?'pcs':/^(?:л|литр)/iu.test(statedUnit)?'l':/^(?:мл|миллилитр)/iu.test(statedUnit)?'ml':/^порци/iu.test(statedUnit)?'portion':/^(?:шт|штук)/iu.test(statedUnit)?'pcs':'g';
       const grams=rawAmount*(editUnit==='l'?1000:1);
       if(action==='update'&&(!Number.isFinite(grams)||grams<=0||grams>10000))return aliceResponse(req,'Назови новую массу, например: измени вес банана со 100 на 150 граммов.');
       if(mass)rest=rest.slice(0,mass.index).trim();
