@@ -129,7 +129,7 @@ export function parseFoodBatch(input) {
   const meal=mealMatch?.[1]||'перекус';
   body=body.replace(/(?:на|в качестве)\s+(?:завтрак|обед|ужин|перекус)\b/,'');
   // Exponenta is a packaged serving (250 g), regardless of flavour.
-  const exponenta=body.trim().match(/^(?:(\\d{1,3})\\s*(?:порци(?:я|и|й|ю)|шт\\.?|штук(?:а|и|у)?)\\s+)?экспонент(?:а|у|ы|ой|ы)?[.!?\\s]*$/u);
+  const exponenta=body.trim().match(/^(?:(\d{1,3})\s*(?:порци(?:я|и|й|ю)|шт\.?|штук(?:а|и|у)?)\s+)?экспонент(?:а|у|ы|ой|ы)?[.!?\s]*$/u);
   if(exponenta){const count=Number(exponenta[1]||1);return count>=1&&count<=100?{status:'parsed',items:[{name:'Экспонента',grams:count,unit:'portion',meal}]}:{status:'invalid_amount'};}
   // Count-based homemade syrniki: API uses 1 pseudo-gram per piece, not real weight.
   const syrniki=body.trim().match(/^(\d{1,3})\s*(?:сырник(?:а|ов)?|сырничк(?:а|ов)?)\s*[.!?]*$/u);
