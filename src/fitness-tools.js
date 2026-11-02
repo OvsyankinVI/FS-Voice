@@ -74,6 +74,26 @@ export const fitnessTools = Object.freeze({
     if(!response.ok)throw new Error('Voice audit HTTP '+response.status);
   },
 
+  async getAiIncomplete(aliceUserId) {
+    const rows=await select('fitness','voice_ai_incomplete',{select:'payload,expires_at',alice_user_id:'eq.'+aliceUserId,limit:'1'});
+    return rows[0]&&new Date(rows[0].expires_at)>new Date()?rows[0].payload:null;
+  },
+  async stageAiIncomplete(aliceUserId,payload) {
+    const {base,key}=credentials();
+    const headers={apikey:key,'Content-Profile':'fitness','Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'};
+    if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
+    const url=new URL('/rest/v1/voice_ai_incomplete?on_conflict=alice_user_id',base);
+    const res=await fetch(url,{method:'POST',headers,body:JSON.stringify({alice_user_id:aliceUserId,payload,expires_at:new Date(Date.now()+600000).toISOString(),updated_at:new Date().toISOString()}),signal:AbortSignal.timeout(3500)});
+    if(!res.ok)throw new Error('AI clarification stage HTTP '+res.status);
+  },
+  async clearAiIncomplete(aliceUserId) {
+    const {base,key}=credentials();
+    const headers={apikey:key,'Content-Profile':'fitness'};
+    if(!key.startsWith('sb_secret_'))headers.Authorization='Bearer '+key;
+    const url=new URL('/rest/v1/voice_ai_incomplete',base);url.searchParams.set('alice_user_id','eq.'+aliceUserId);
+    const res=await fetch(url,{method:'DELETE',headers,signal:AbortSignal.timeout(3500)});
+    if(!res.ok)throw new Error('AI clarification clear HTTP '+res.status);
+  },
   async getVoiceChoice(aliceUserId) {
     const rows=await select('fitness','voice_pending_choices',{select:'owner_id,kind,choices,context,expires_at',alice_user_id:'eq.'+aliceUserId,limit:'1'});
     return rows[0]&&new Date(rows[0].expires_at)>new Date()?rows[0]:null;
