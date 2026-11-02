@@ -146,7 +146,18 @@ export function parseFoodBatch(input) {
   const items=[];
   for(const piece of pieces){
     const quantity=piece.match(/(\d+(?:[.,]\d+)?)\s*(килограмм(?:а|ов)?|кг|миллилитр(?:а|ов)?|мл|литр(?:а|ов)?|л|грамм(?:а|ов)?|гр|г|штук|штуки|штука|штуку|шт\.?|порци(?:я|и|й|ю))(?=$|[\s,;.!?])/);
-    if(!quantity)return {status:'missing_amount',product:piece};
+    if(!quantity){
+      const implicit=piece.match(/^(\d+(?:[.,]\d+)?)\s+(.+)$/u);
+      const words={один:1,одна:1,одно:1,два:2,две:2,три:3,четыре:4,пять:5,шесть:6,семь:7,восемь:8,девять:9,десять:10};
+      const spoken=piece.match(/^(один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять)\s+(.+)$/u);
+      if(!implicit&&!spoken)return {status:'missing_amount',product:piece};
+      const amount=implicit?Number(implicit[1].replace(',','.')):words[spoken[1]];
+      const name=(implicit?implicit[2]:spoken[2]).trim();
+      if(!Number.isFinite(amount)||amount<=0||amount>100)return {status:'invalid_amount'};
+      if(name.length<2)return {status:'missing_product'};
+      items.push({name,grams:amount,unit:'pcs',meal});
+      continue;
+    }
     const normalized=normalizeFoodQuantity(quantity[1],quantity[2]);
     if(!normalized)return {status:'invalid_amount'};
     const grams=normalized.amount;
