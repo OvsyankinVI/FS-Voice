@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.24-yandex-followup-20261102';
+const BUILD='0.4.25-yandex-followup-unit-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -272,7 +272,8 @@ async function handleCore(req) {
       if(match){
         const words={один:1,одна:1,два:2,две:2,три:3,четыре:4,пять:5,десять:10,двести:200,триста:300,четыреста:400,пятьсот:500};
         const quantity=words[match[1]]||Number(match[1].replace(',','.'));
-        const unit=match[2]?.startsWith('г')?'g':match[2]?.startsWith('ш')?'pcs':'ml';
+        if(!match[2])return aliceResponse(req,'Назови единицу измерения для '+(incomplete.items.find(x=>x.quantity==null)?.name||'продукта')+': например, '+quantity+' миллилитров или '+quantity+' граммов.',false,{fs_ai_incomplete:incomplete});
+         const unit=match[2].startsWith('г')?'g':match[2].startsWith('ш')?'pcs':'ml';
         const items=incomplete.items.map(x=>({...x}));
         const index=items.findIndex(x=>x.quantity==null);
         if(index>=0&&quantity>0&&quantity<=10000){
