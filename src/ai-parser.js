@@ -35,3 +35,23 @@ export async function parseWithGemini(phrase,{fetchImpl=globalThis.fetch,apiKey=
   }catch(error){return {status:'unavailable',reason:error?.name==='AbortError'?'timeout':error instanceof SyntaxError?'invalid_json':error?.cause?.code==='ENOTFOUND'?'dns_failed':error?.cause?.code==='ETIMEDOUT'?'network_timeout':'network_error'}}
   finally{clearTimeout(timer)}
 }
+
+export async function listGeminiModels({fetchImpl=globalThis.fetch,apiKey=process.env.GEMINI_API_KEY,timeoutMs=6000}={}){
+  if(process.env.AI_ENABLED!=='true')return {status:'disabled'};
+  if(!apiKey)return {status:'missing_key'};
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const response=await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100',{
+      headers:{'x-goog-api-key':apiKey},signal:controller.signal
+    });
+    if(!response.ok)return {status:'unavailable',httpStatus:response.status};
+    const data=await response.json();
+    const models=(Array.isArray(data.models)?data.models:[])
+      .filter(m=>Array.isArray(m.supportedGenerationMethods)&&m.supportedGenerationMethods.includes('generateContent'))
+      .map(m=>m.name).filter(n=>typeof n==='string').slice(0,12);
+    return {status:'ok',models};
+  }catch(error){
+    return {status:'unavailable',reason:error?.name==='AbortError'?'timeout':error?.cause?.code==='ENOTFOUND'?'dns_failed':'network_error'};
+  }finally{clearTimeout(timer)}
+}
