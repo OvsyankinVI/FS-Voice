@@ -199,7 +199,7 @@ test('audit records voice request and exact reply without affecting Alice respon
   assert.equal(recorded.response_text,answer.response.text);
   assert.equal(recorded.outcome,'ok');
   assert.equal(recorded.message_id,9);
-  assert.equal(recorded.build_version,'0.4.28-catalog-units-20261102');
+  assert.equal(recorded.build_version,'0.4.29-fix-clarification-regex-20261102');
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_AUDIT_ENABLED',old.audit]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
@@ -273,4 +273,16 @@ test('Yandex missing quantity preserves all partial food items for clarification
     if(previousAiEnabled===undefined)delete process.env.AI_ENABLED;
     else process.env.AI_ENABLED=previousAiEnabled;
   }
+});
+
+
+test('Alice clarification regex accepts numeric and spoken portions',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const source=await readFile(new URL('../src/server.js',import.meta.url),'utf8');
+  const line=source.split('\n').find(x=>x.includes('const match=answer.match('));
+  assert.ok(line,'clarification regex exists');
+  const literal=line.match(/answer\.match\((\/\^.*\/u)\)/)?.[1];
+  assert.ok(literal,'clarification regex literal exists');
+  const pattern=Function('return '+literal)();
+  for(const phrase of ['1','1 порция','одна порция','300 миллилитров','300'])assert.ok(pattern.test(phrase),phrase);
 });
