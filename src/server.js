@@ -2,14 +2,14 @@ import http from 'node:http';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
-import {parseWithGemini,listGeminiModels} from './ai-parser.js';
+import {parseWithGemini,listGeminiModels,parseWithYandex} from './ai-parser.js';
 
 import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand,parseFoodBatch,convertFoodQuantity} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.17-gemini-errors-20261102';
+const BUILD='0.4.18-yandex-test-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -100,6 +100,14 @@ async function handleCore(req) {
     const result=await listGeminiModels();
     if(result.status!=='ok')return aliceResponse(req,'Список моделей Gemini: '+result.status+(result.httpStatus?' HTTP '+result.httpStatus:'')+(result.reason?' '+result.reason:'')+'. Ничего не записано.');
     return aliceResponse(req,result.models.length?'Доступные модели Gemini: '+result.models.join(', ')+'. Ничего не записано.':'Gemini ответила, но моделей generateContent в первой странице списка нет. Ничего не записано.');
+  }
+  const yandexTest=aiText.match(/^тест яндекса(?:[:.,!]?\\s+(.+))?[.!?]*$/iu);
+  if(yandexTest){
+    const prompt=(yandexTest[1]||'добавь два сырника и 200 миллилитров кокосового молока').trim();
+    const result=await parseWithYandex(prompt);
+    if(result.status!=='parsed')return aliceResponse(req,'Тест Яндекса. Версия '+BUILD+'. Yandex: '+result.status+(result.httpStatus?' HTTP '+result.httpStatus:'')+(result.reason?' '+result.reason:'')+'. Ничего не записано.');
+    const items=result.command.items.map(x=>x.name+', '+x.quantity+' '+({g:'граммов',ml:'миллилитров',pcs:'штук',portion:'порций'}[x.unit])).join('; ');
+    return aliceResponse(req,'Тест Яндекса. Версия '+BUILD+'. Распознано: '+items+'. Ничего не записано.');
   }
   if(aiTest||aiLegacy){
     if(process.env.AI_ENABLED!=='true')return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini выключена: AI_ENABLED=false. Ничего не записано.');
