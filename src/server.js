@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.27-yandex-durable-followup-20261102';
+const BUILD='0.4.28-catalog-units-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -268,20 +268,29 @@ async function handleCore(req) {
       if(/^(нет|отмена|отмени)$/iu.test(phrase.trim()))
         {await fitnessTools.clearAiIncomplete(id);return aliceResponse(req,'Отменил. Ничего не записано.',false,{fs_ai_incomplete:null});}
       const answer=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е');
-      const match=answer.match(/^(\d+(?:[.,]\d+)?|один|одна|два|две|три|четыре|пять|десять|двести|триста|четыреста|пятьсот)(?:\s*(мл|миллилитров|миллилитра|миллилитр|г|грамм|граммов|штук|шт))?[.!?]*$/u);
+      const match=answer.match(/^(\\d+(?:[.,]\\d+)?|один|одна|одно|одну|два|две|три|четыре|пять|десять|двести|триста|четыреста|пятьсот)(?:\\s*(мл|миллилитров|миллилитра|миллилитр|г|грамм|граммов|грамма|штук|штуки|штука|шт|порция|порции|порцию|порций|порц))?[.!?]*$/u);
       if(match){
-        const words={один:1,одна:1,два:2,две:2,три:3,четыре:4,пять:5,десять:10,двести:200,триста:300,четыреста:400,пятьсот:500};
+        const words={один:1,одна:1,одно:1,одну:1,два:2,две:2,три:3,четыре:4,пять:5,десять:10,двести:200,триста:300,четыреста:400,пятьсот:500};
         const quantity=words[match[1]]||Number(match[1].replace(',','.'));
         const missingItem=incomplete.items.find(x=>x.quantity==null);
-        const inferredUnit=/кофе|чай|молок|сок|вода|напит|кефир|йогурт питьев|лимонад|кола|смузи|коктейль/iu.test(missingItem?.name||'')?'ml':/сырник|яйц|банан|конфет|печень|батончик|штук|булочк|круассан/iu.test(missingItem?.name||'')?'pcs':null;
-        if(!match[2]&&!inferredUnit)return aliceResponse(req,'Уточни единицу для '+(missingItem?.name||'продукта')+': граммы, миллилитры или штуки?',false,{fs_ai_incomplete:incomplete});
-        const unit=match[2]?(match[2].startsWith('г')?'g':match[2].startsWith('ш')?'pcs':'ml'):inferredUnit;
+        const explicit=match[2];
+        let unit=explicit?(explicit.startsWith('г')?'g':explicit.startsWith('ш')?'pcs':explicit.startsWith('пор')?'portion':'ml'):null;
+        if(!unit){
+          const originalOwner=recipientOf(incomplete.original_phrase||'');
+          const owner=originalOwner.length===1?originalOwner[0]:members.length===1?members[0]:null;
+          if(owner){
+            const candidates=await fitnessTools.searchPersonalFoods(owner.owner_id,missingItem?.name||'');
+            const units=[...new Set(candidates.map(x=>x.source_extra?.voice_unit||(x.name==='Сырник домашний'?'pcs':x.name==='Завтрак с бутербродом'?'portion':null)).filter(x=>['g','ml','pcs','portion'].includes(x)))];
+            if(candidates.length===1&&units.length===1)unit=units[0];
+          }
+          if(!unit)return aliceResponse(req,'Уточни единицу для '+(missingItem?.name||'продукта')+': граммы, миллилитры, штуки или порции?',false,{fs_ai_incomplete:incomplete});
+        }
         const items=incomplete.items.map(x=>({...x}));
         const index=items.findIndex(x=>x.quantity==null);
         if(index>=0&&quantity>0&&quantity<=10000){
           items[index]={...items[index],quantity,unit};
           const next=items.find(x=>x.quantity==null);
-          if(next){await fitnessTools.stageAiIncomplete(id,{...incomplete,items});return aliceResponse(req,'Сколько '+(next.name||'этого продукта')+'? Назови количество и единицу.',false,{fs_ai_incomplete:{...incomplete,items}});}
+          if(next){await fitnessTools.stageAiIncomplete(id,{...incomplete,items});return aliceResponse(req,'Сколько '+(next.name||'этого продукта')+'? Назови количество, при необходимости с единицей.',false,{fs_ai_incomplete:{...incomplete,items}});}
           const meal=(incomplete.meal||'Перекус').toLocaleLowerCase('ru');
           const ready=items.map(x=>({name:x.name,grams:x.quantity,unit:x.unit,meal}));
           const chosen=recipientOf(incomplete.original_phrase||'');
@@ -294,7 +303,7 @@ async function handleCore(req) {
           return response;
         }
       }
-      return aliceResponse(req,'Уточни количество для '+incomplete.items.find(x=>x.quantity==null)?.name+'. Например, 300 миллилитров. Или скажи отмена.',false,{fs_ai_incomplete:incomplete});
+      return aliceResponse(req,'Уточни количество для '+incomplete.items.find(x=>x.quantity==null)?.name+'. Например, 1 порция или 300 миллилитров. Или скажи отмена.',false,{fs_ai_incomplete:incomplete});
     }
     // Resolve a persisted ambiguous food selection before creating any confirmation.
     if(numberedChoice(phrase)){
@@ -458,7 +467,7 @@ async function handleCore(req) {
           name:item.name,grams:item.quantity,unit:item.unit,meal
         }))};
         console.info('[FS-Voice]',BUILD,'yandex_fallback_parsed',command.items.length);
-      }else if(ai.status==='missing_amount'&&ai.partial?.items?.length&&ai.partial.items.length<=10){const pending={version:1,alice_user_id:id,created_at:Date.now(),original_phrase:phrase,meal:ai.partial.meal,items:ai.partial.items};await fitnessTools.stageAiIncomplete(id,pending);return aliceResponse(req,'Сколько '+ai.missing[0]+'? Назови количество и единицу. Или скажи отмена.',false,{fs_ai_incomplete:pending});}
+      }else if(ai.status==='missing_amount'&&ai.partial?.items?.length&&ai.partial.items.length<=10){const pending={version:1,alice_user_id:id,created_at:Date.now(),original_phrase:phrase,meal:ai.partial.meal,items:ai.partial.items};await fitnessTools.stageAiIncomplete(id,pending);return aliceResponse(req,'Сколько '+ai.missing[0]+'? Назови количество, при необходимости с единицей. Или скажи отмена.',false,{fs_ai_incomplete:pending});}
       else if(ai.status==='missing_amount')return aliceResponse(req,'Уточни количество для: '+ai.missing.join(', ')+'. Ничего не записано.');
       else console.info('[FS-Voice]',BUILD,'yandex_fallback',ai.status);
     }
