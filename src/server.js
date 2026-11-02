@@ -2,6 +2,7 @@ import http from 'node:http';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
+import {parseWithGemini} from './ai-parser.js';
 
 import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand,parseFoodBatch,convertFoodQuantity} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
@@ -89,6 +90,16 @@ async function handleCore(req) {
   if (/^(?:джарвис[,.!]?\s*)?(?:какая\s+у\s+тебя\s+версия|назови\s+(?:свою\s+)?версию|версия)(?:[?!.\s]*)$/iu.test(phrase.trim()))
     return aliceResponse(req,'Версия Джарвиса: '+BUILD+'.');
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
+  // Explicit read-only smoke test: does not access Supabase or write food logs.
+  // Never sends session identifiers, nutrition history or credentials to Gemini.
+  const aiProbe=phrase.trim().match(/^(?:джарвис[,!]?\\s+)?проверь нейросеть[:\\s]+(.+)$/iu);
+  if(aiProbe){
+    if(process.env.AI_ENABLED!=='true')return aliceResponse(req,'Нейросеть пока выключена. Запись питания работает как раньше.');
+    const result=await parseWithGemini(aiProbe[1]);
+    if(result.status!=='parsed')return aliceResponse(req,'Нейросеть не смогла разобрать команду. Статус: '+result.status+'. Ничего не записано.');
+    const items=result.command.items.map(x=>x.name+', '+x.quantity+' '+({g:'граммов',ml:'миллилитров',pcs:'штук',portion:'порций'}[x.unit])).join('; ');
+    return aliceResponse(req,'Нейросеть распознала: '+items+'. Ничего не записано.');
+  }
   let stage='parse_command';
   try {
     const parsedCommand=parseFoodBatch(phrase);
