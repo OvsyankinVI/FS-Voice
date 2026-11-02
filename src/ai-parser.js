@@ -32,6 +32,6 @@ export async function parseWithGemini(phrase,{fetchImpl=globalThis.fetch,apiKey=
     if(!raw)return {status:'invalid_response'};
     const command=validateAiFoodCommand(JSON.parse(raw));
     return command?{status:'parsed',command}:{status:'unsupported'};
-  }catch{return {status:'unavailable'}}
+  }catch(error){return {status:'unavailable',reason:error?.name==='AbortError'?'timeout':error instanceof SyntaxError?'invalid_json':error?.cause?.code==='ENOTFOUND'?'dns_failed':error?.cause?.code==='ETIMEDOUT'?'network_timeout':'network_error'}}
   finally{clearTimeout(timer)}
 }
