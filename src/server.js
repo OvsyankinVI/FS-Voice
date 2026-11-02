@@ -2,14 +2,14 @@ import http from 'node:http';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 import {fitnessTools} from './fitness-tools.js';
-import {parseWithGemini} from './ai-parser.js';
+import {parseWithGemini,listGeminiModels} from './ai-parser.js';
 
 import {todayMoscow,nutritionForDay,targetsFromSettings,targetsFromSite,intent,speak,parseFoodCommand,parseFoodBatch,convertFoodQuantity} from './core.js';
 const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.15-gemini-diagnostics-20261102';
+const BUILD='0.4.16-gemini-models-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -96,6 +96,11 @@ async function handleCore(req) {
   const aiText=phrase.trim().replace(/^(?:джарвис[,!]?\\s*)/iu,'').trim();
   const aiTest=aiText.match(/^тест нейросети(?:[:.,!]?\\s+(.+))?[.!?]*$/iu);
   const aiLegacy=aiText.match(/^проверь нейросеть[:\\s]+(.+)$/iu);
+  if(/^(?:список моделей|модели нейросети)[.!?]*$/iu.test(aiText)){
+    const result=await listGeminiModels();
+    if(result.status!=='ok')return aliceResponse(req,'Список моделей Gemini: '+result.status+(result.httpStatus?' HTTP '+result.httpStatus:'')+(result.reason?' '+result.reason:'')+'. Ничего не записано.');
+    return aliceResponse(req,result.models.length?'Доступные модели Gemini: '+result.models.join(', ')+'. Ничего не записано.':'Gemini ответила, но моделей generateContent в первой странице списка нет. Ничего не записано.');
+  }
   if(aiTest||aiLegacy){
     if(process.env.AI_ENABLED!=='true')return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini выключена: AI_ENABLED=false. Ничего не записано.');
     const prompt=(aiTest?.[1]||aiLegacy?.[1]||'добавь два сырника и 200 миллилитров кокосового молока').trim();
