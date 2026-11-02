@@ -199,7 +199,7 @@ test('audit records voice request and exact reply without affecting Alice respon
   assert.equal(recorded.response_text,answer.response.text);
   assert.equal(recorded.outcome,'ok');
   assert.equal(recorded.message_id,9);
-  assert.equal(recorded.build_version,'0.4.19-yandex-fallback-20261102');
+  assert.equal(recorded.build_version,'0.4.20-yandex-missing-amount-20261102');
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_AUDIT_ENABLED',old.audit]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
