@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.23-yandex-partial-20261102';
+const BUILD='0.4.24-yandex-followup-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -261,6 +261,37 @@ async function handleCore(req) {
       const summary=items.map((item,i)=>result.selected[i].name+' '+item.grams+({g:' г',ml:' мл',pcs:' шт.',portion:' порц.'}[item.unit||'g']||' г')).join(', ');
       return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
+    // Continue a partially parsed food command in Alice session state.
+    const incomplete=req?.state?.session?.fs_ai_incomplete||req?.state?.user?.fs_ai_incomplete;
+    if(incomplete?.version===1&&incomplete.alice_user_id===id&&Array.isArray(incomplete.items)
+      &&incomplete.items.length<=10&&Date.now()-incomplete.created_at<600000){
+      if(/^(нет|отмена|отмени)$/iu.test(phrase.trim()))
+        return aliceResponse(req,'Отменил. Ничего не записано.',false,{fs_ai_incomplete:null});
+      const answer=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е');
+      const match=answer.match(/^(\d+(?:[.,]\d+)?|один|одна|два|две|три|четыре|пять|десять|двести|триста|четыреста|пятьсот)(?:\s*(мл|миллилитров|миллилитра|миллилитр|г|грамм|граммов|штук|шт))?[.!?]*$/u);
+      if(match){
+        const words={один:1,одна:1,два:2,две:2,три:3,четыре:4,пять:5,десять:10,двести:200,триста:300,четыреста:400,пятьсот:500};
+        const quantity=words[match[1]]||Number(match[1].replace(',','.'));
+        const unit=match[2]?.startsWith('г')?'g':match[2]?.startsWith('ш')?'pcs':'ml';
+        const items=incomplete.items.map(x=>({...x}));
+        const index=items.findIndex(x=>x.quantity==null);
+        if(index>=0&&quantity>0&&quantity<=10000){
+          items[index]={...items[index],quantity,unit};
+          const next=items.find(x=>x.quantity==null);
+          if(next)return aliceResponse(req,'Сколько '+(next.name||'этого продукта')+'? Назови количество и единицу.',false,{fs_ai_incomplete:{...incomplete,items}});
+          const meal=(incomplete.meal||'Перекус').toLocaleLowerCase('ru');
+          const ready=items.map(x=>({name:x.name,grams:x.quantity,unit:x.unit,meal}));
+          const chosen=recipientOf(incomplete.original_phrase||'');
+          const owner=chosen.length===1?chosen[0]:members.length===1?members[0]:null;
+          if(!owner)return aliceResponse(req,'Кому записать: '+members.map(m=>m.display_name).join(' или ')+'?',false,{fs_ai_incomplete:null,fs_batch_recipient:{version:1,alice_user_id:id,items:ready}});
+          const response=await prepare(owner,ready);
+          response.user_state_update={...(response.user_state_update||{}),fs_ai_incomplete:null};
+          response.session_state={...(response.session_state||{}),fs_ai_incomplete:null};
+          return response;
+        }
+      }
+      return aliceResponse(req,'Уточни количество для '+incomplete.items.find(x=>x.quantity==null)?.name+'. Например, 300 миллилитров. Или скажи отмена.',false,{fs_ai_incomplete:incomplete});
+    }
     // Resolve a persisted ambiguous food selection before creating any confirmation.
     if(numberedChoice(phrase)){
       stage='load_product_choice';
@@ -423,7 +454,8 @@ async function handleCore(req) {
           name:item.name,grams:item.quantity,unit:item.unit,meal
         }))};
         console.info('[FS-Voice]',BUILD,'yandex_fallback_parsed',command.items.length);
-      }else if(ai.status==='missing_amount')return aliceResponse(req,'Уточни количество для: '+ai.missing.join(', ')+'. Повтори команду целиком с количеством каждого продукта. Ничего не записано.');
+      }else if(ai.status==='missing_amount'&&ai.partial?.items?.length&&ai.partial.items.length<=10)return aliceResponse(req,'Сколько '+ai.missing[0]+'? Назови количество и единицу. Или скажи отмена.',false,{fs_ai_incomplete:{version:1,alice_user_id:id,created_at:Date.now(),original_phrase:phrase,meal:ai.partial.meal,items:ai.partial.items}});
+      else if(ai.status==='missing_amount')return aliceResponse(req,'Уточни количество для: '+ai.missing.join(', ')+'. Ничего не записано.');
       else console.info('[FS-Voice]',BUILD,'yandex_fallback',ai.status);
     }
     if(command){
