@@ -259,6 +259,9 @@ test('0.4.14: deletion mass matches exact banana without altering another',async
 test('Yandex missing quantity preserves all partial food items for clarification',async()=>{
   const {parseWithYandex}=await import('../src/ai-parser.js');
   const response={choices:[{message:{content:JSON.stringify({intent:'add_food',meal:'Завтрак',items:[{name:'сырники',quantity:2,unit:'pcs'},{name:'кофе с банановым молоком',quantity:null,unit:null},{name:'протеин',quantity:50,unit:'g'}]})}}]};
+  const previousAiEnabled=process.env.AI_ENABLED;
+  process.env.AI_ENABLED='true';
+  try {
   const parsed=await parseWithYandex('запиши на завтрак два сырника, кофе с банановым молоком и 50 граммов протеина',{
     apiKey:'test-key',folderId:'test-folder',fetchImpl:async()=>new Response(JSON.stringify(response),{status:200})
   });
@@ -266,4 +269,8 @@ test('Yandex missing quantity preserves all partial food items for clarification
   assert.deepEqual(parsed.missing,['кофе с банановым молоком']);
   assert.equal(parsed.partial.items.length,3);
   assert.deepEqual(parsed.partial.items.map(x=>x.quantity),[2,null,50]);
+  } finally {
+    if(previousAiEnabled===undefined)delete process.env.AI_ENABLED;
+    else process.env.AI_ENABLED=previousAiEnabled;
+  }
 });
