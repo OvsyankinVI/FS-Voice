@@ -199,7 +199,7 @@ test('audit records voice request and exact reply without affecting Alice respon
   assert.equal(recorded.response_text,answer.response.text);
   assert.equal(recorded.outcome,'ok');
   assert.equal(recorded.message_id,9);
-  assert.equal(recorded.build_version,'0.4.24-yandex-followup-20261102');
+  assert.equal(recorded.build_version,'0.4.25-yandex-followup-unit-20261102');
  }finally{
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key],['FS_VOICE_AUDIT_ENABLED',old.audit]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
@@ -253,4 +253,17 @@ test('0.4.14: deletion mass matches exact banana without altering another',async
   globalThis.fetch=old.fetch;
   for(const [name,value] of [['SUPABASE_URL',old.url],['SUPABASE_SECRET_KEY',old.key]]){if(value===undefined)delete process.env[name];else process.env[name]=value;}
  }
+});
+
+
+test('Yandex missing quantity preserves all partial food items for clarification',async()=>{
+  const {parseWithYandex}=await import('../src/ai-parser.js');
+  const response={choices:[{message:{content:JSON.stringify({intent:'add_food',meal:'Завтрак',items:[{name:'сырники',quantity:2,unit:'pcs'},{name:'кофе с банановым молоком',quantity:null,unit:null},{name:'протеин',quantity:50,unit:'g'}]})}}]};
+  const parsed=await parseWithYandex('запиши на завтрак два сырника, кофе с банановым молоком и 50 граммов протеина',{
+    apiKey:'test-key',folderId:'test-folder',fetchImpl:async()=>new Response(JSON.stringify(response),{status:200})
+  });
+  assert.equal(parsed.status,'missing_amount');
+  assert.deepEqual(parsed.missing,['кофе с банановым молоком']);
+  assert.equal(parsed.partial.items.length,3);
+  assert.deepEqual(parsed.partial.items.map(x=>x.quantity),[2,null,50]);
 });
