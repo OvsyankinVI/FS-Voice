@@ -92,7 +92,7 @@ async function handleCore(req) {
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   // Explicit read-only smoke test: does not access Supabase or write food logs.
   // Never sends session identifiers, nutrition history or credentials to Gemini.
-  const aiProbe=phrase.trim().match(/^(?:джарвис[,!]?\\s+)?проверь нейросеть[:\\s]+(.+)$/iu);
+  const aiProbe=phrase.trim().match(/^(?:джарвис[,!]?\s+)?проверь нейросеть[:\s]+(.+)$/iu);
   if(aiProbe){
     if(process.env.AI_ENABLED!=='true')return aliceResponse(req,'Нейросеть пока выключена. Запись питания работает как раньше.');
     const result=await parseWithGemini(aiProbe[1]);
