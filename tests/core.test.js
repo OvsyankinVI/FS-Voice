@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {parseDate,nutritionForDay,speak,intent,targetsFromSite} from '../src/core.js';
+import {parseDate,nutritionForDay,speak,intent,targetsFromSite,parseFoodBatch} from '../src/core.js';
 const rows=[['Дата','Вес','Ккал','Белки','Жиры','Углеводы'],['26.10.2026','','1502,3','73,32','38,26','226,2']];
 const targets={kcal:2370,protein:190,fat:70,carbs:245};
 test('Russian date and decimal commas',()=>{assert.equal(parseDate('26.10.2026'),'2026-10-26');assert.equal(nutritionForDay(rows,'2026-10-26').consumed.protein,73.32)});
@@ -9,3 +9,13 @@ test('remaining protein',()=>assert.match(speak(nutritionForDay(rows,'2026-10-26
 test('over target',()=>assert.match(speak({status:'ok',consumed:{...nutritionForDay(rows,'2026-10-26').consumed,fat:82}},targets,'fat'),/Превышение на 12/));
 test('intent',()=>assert.equal(intent('сколько осталось белка'),'protein'));
 test('targets from site',()=>assert.equal(targetsFromSite({target:{kcal:[2370,2370],protein:[190,190],fat:[70,70],carbs:[245,245]}}).kcal,2370));
+
+test('implicit pieces and spoken numbers',()=>{
+  for(const [phrase,count,name] of [['добавь 2 яйца',2,'яйца'],['добавь две шаурмы',2,'шаурмы'],['добавь два кофе с банановым молоком',2,'кофе с банановым молоком']]){
+    const result=parseFoodBatch(phrase);
+    assert.equal(result.status,'parsed');
+    assert.equal(result.items[0].unit,'pcs');
+    assert.equal(result.items[0].grams,count);
+    assert.equal(result.items[0].name,name);
+  }
+});
