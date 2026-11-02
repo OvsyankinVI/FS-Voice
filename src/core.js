@@ -93,7 +93,8 @@ export function convertFoodQuantity(quantity, product) {
   if(!quantity||!unit||!Number.isFinite(basis)||basis<=0)return null;
   let amount=quantity.amount;
   if(quantity.unit!==unit) {
-    const factor=quantity.unit==='pcs'&&unit==='g'?Number(meta.grams_per_piece):
+    const factor=quantity.unit==='pcs'&&unit==='portion'&&meta.pieces_per_portion===1?1:
+      quantity.unit==='pcs'&&unit==='g'?Number(meta.grams_per_piece):
       quantity.unit==='portion'&&unit==='g'?Number(meta.grams_per_portion):
       quantity.unit==='portion'&&unit==='ml'?Number(meta.ml_per_portion):0;
     if(!Number.isFinite(factor)||factor<=0)return null;
