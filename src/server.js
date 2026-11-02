@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.29-fix-clarification-regex-20261102';
+const BUILD='0.4.30-jarvis-voice-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -75,6 +75,23 @@ function auditReply(req,answer,issues) {
   // Best effort: audit failure must not change Alice's answer.
   return fitnessTools.logVoiceRequest(record).catch(error=>console.error('[FS-Voice]',BUILD,'audit_write_failed',safeErrorCode(error))).then(()=>answer);
 }
+function dativeName(value) {
+  const name=String(value||'').trim();
+  const known={влад:'Владу',владислав:'Владиславу',ангелина:'Ангелине',витя:'Вите',виктор:'Виктору',петя:'Пете',петр:'Петру',пётр:'Петру'};
+  return name.split(/(\\s+|-)/u).map(part=>{
+    const lower=part.toLocaleLowerCase('ru').replace(/ё/g,'е');
+    if(known[lower])return known[lower];
+    if(!/^[А-ЯЁа-яё]+$/u.test(part))return part;
+    if(/(ия)$/iu.test(part))return part.slice(0,-1)+'и';
+    if(/(а)$/iu.test(part))return part.slice(0,-1)+'е';
+    if(/(я)$/iu.test(part))return part.slice(0,-1)+'е';
+    if(/(й)$/iu.test(part))return part.slice(0,-1)+'ю';
+    if(/(ь)$/iu.test(part))return part.slice(0,-1)+'ю';
+    if(/[бвгджзклмнпрстфхцчшщ]$/iu.test(part))return part+'у';
+    return part;
+  }).join('');
+}
+function naturalList(parts){return parts.length<=1?parts.join(''):parts.slice(0,-1).join(', ')+' и '+parts.at(-1);}
 function aliceResponse(req,text,endSession=false,state=null) {
   const answer={version:req.version||'1.0',session:req.session,response:{text,tts:text,end_session:endSession}};
   if(state){answer.session_state=state;answer.user_state_update=state;}
@@ -258,8 +275,7 @@ async function handleCore(req) {
       }
       stage='stage_confirmation';
       await fitnessTools.stageConfirmation({aliceUserId:id,ownerId:owner.owner_id,items:result.selected.map(({name,...item})=>item)});
-      const summary=items.map((item,i)=>result.selected[i].name+' '+item.grams+({g:' г',ml:' мл',pcs:' шт.',portion:' порц.'}[item.unit||'g']||' г')).join(', ');
-      return aliceResponse(req,'Добавить для '+owner.display_name+': '+summary+'? Скажи да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
+      return aliceResponse(req,'Давайте сверим данные, чтобы исключить ошибку. Добавляю '+dativeName(owner.display_name)+': '+naturalList(items.map((item,i)=>result.selected[i].name+' — '+item.grams+({g:' граммов',ml:' миллилитров',pcs:' штук',portion:' порций'}[item.unit||'g']||' граммов')))+'. Всё верно? Скажите да или нет.',false,{fs_batch_pending:{version:1,alice_user_id:id,owner_id:owner.owner_id,items:result.selected}});
     };
     // Continue a partially parsed food command in Alice session state.
     const incomplete=req?.state?.session?.fs_ai_incomplete||req?.state?.user?.fs_ai_incomplete||await fitnessTools.getAiIncomplete(id).catch(()=>null);
