@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.22-yandex-diagnostic-20261102';
+const BUILD='0.4.23-yandex-partial-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -105,7 +105,7 @@ async function handleCore(req) {
   if(yandexTest){
     const prompt=(yandexTest[1]||'добавь два сырника и 200 миллилитров кокосового молока').trim();
     const result=await parseWithYandex(prompt);
-    if(result.status!=='parsed')return aliceResponse(req,'Тест Яндекса. Версия '+BUILD+'. Yandex: '+result.status+(result.httpStatus?' HTTP '+result.httpStatus:'')+(result.reason?' '+result.reason:'')+'. Ничего не записано.');
+    if(result.status!=='parsed')return aliceResponse(req,'Тест Яндекса. Версия '+BUILD+'. Yandex: '+result.status+(result.missing?.length?' Не указано количество: '+result.missing.join(', '):'')+(result.httpStatus?' HTTP '+result.httpStatus:'')+(result.reason?' '+result.reason:'')+'. Ничего не записано.');
     const items=result.command.items.map(x=>x.name+', '+x.quantity+' '+({g:'граммов',ml:'миллилитров',pcs:'штук',portion:'порций'}[x.unit])).join('; ');
     return aliceResponse(req,'Тест Яндекса. Версия '+BUILD+'. Распознано: '+items+'. Ничего не записано.');
   }
