@@ -14,6 +14,23 @@ export function validateAiFoodCommand(value){
   }
   return {intent:'add_food',meal:value.meal||null,items};
 }
+// Only expose known error categories, never raw provider messages or credentials.
+async function classifyGeminiHttpError(response){
+  let code='unknown';
+  try{
+    const body=await response.json();
+    const status=String(body?.error?.status||'');
+    const message=String(body?.error?.message||'');
+    if(/API_KEY_INVALID|API key not valid/i.test(status+' '+message))code='invalid_api_key';
+    else if(/API_KEY_SERVICE_BLOCKED|SERVICE_DISABLED|API has not been used|not enabled/i.test(status+' '+message))code='api_disabled';
+    else if(/location is not supported|region|country not supported/i.test(message))code='region_restricted';
+    else if(/not found|not supported for generateContent/i.test(message))code='model_not_found';
+    else if(/quota|rate limit|RESOURCE_EXHAUSTED/i.test(status+' '+message))code='quota';
+    else if(/permission|PERMISSION_DENIED/i.test(status+' '+message))code='permission_denied';
+    else if(/INVALID_ARGUMENT/i.test(status))code='invalid_request';
+  }catch{}
+  return {status:'unavailable',httpStatus:response.status,reason:code};
+}
 export async function parseWithGemini(phrase,{fetchImpl=globalThis.fetch,apiKey=process.env.GEMINI_API_KEY,model=process.env.GEMINI_MODEL||'gemini-2.5-flash',timeoutMs=6000}={}){
   if(process.env.AI_ENABLED!=='true'||!apiKey)return {status:'disabled'};
   if(typeof phrase!=='string'||phrase.length<2||phrase.length>1200||!MODEL_RE.test(model))return {status:'invalid_input'};
@@ -26,7 +43,7 @@ export async function parseWithGemini(phrase,{fetchImpl=globalThis.fetch,apiKey=
       contents:[{role:'user',parts:[{text:phrase}]}],
       generationConfig:{temperature:0,responseMimeType:'application/json',maxOutputTokens:512}
     })});
-    if(!response.ok)return {status:'unavailable',httpStatus:response.status};
+    if(!response.ok)return await classifyGeminiHttpError(response);
     const payload=await response.json();
     const raw=payload?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('');
     if(!raw)return {status:'invalid_response'};
@@ -42,7 +59,7 @@ export async function listGeminiModels({fetchImpl=globalThis.fetch,apiKey=proces
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-    const response=await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100',{
+    const response=await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models',{
       headers:{'x-goog-api-key':apiKey},signal:controller.signal
     });
     if(!response.ok)return {status:'unavailable',httpStatus:response.status};
