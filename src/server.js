@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.14-reliability-20261030';
+const BUILD='0.4.15-gemini-diagnostics-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -92,13 +92,17 @@ async function handleCore(req) {
   if(req?.session?.new && !phrase.trim()) return aliceResponse(req,'Привет! Спроси про калории, белки или питание за сегодня.');
   // Explicit read-only smoke test: does not access Supabase or write food logs.
   // Never sends session identifiers, nutrition history or credentials to Gemini.
-  const aiProbe=phrase.trim().match(/^(?:джарвис[,!]?\s+)?проверь нейросеть[:\s]+(.+)$/iu);
-  if(aiProbe){
-    if(process.env.AI_ENABLED!=='true')return aliceResponse(req,'Нейросеть пока выключена. Запись питания работает как раньше.');
-    const result=await parseWithGemini(aiProbe[1]);
-    if(result.status!=='parsed')return aliceResponse(req,'Нейросеть не смогла разобрать команду. Статус: '+result.status+'. Ничего не записано.');
+  // Dedicated Gemini diagnostics. Always handled before food parsing; never writes.
+  const aiText=phrase.trim().replace(/^(?:джарвис[,!]?\\s*)/iu,'').trim();
+  const aiTest=aiText.match(/^тест нейросети(?:[:.,!]?\\s+(.+))?[.!?]*$/iu);
+  const aiLegacy=aiText.match(/^проверь нейросеть[:\\s]+(.+)$/iu);
+  if(aiTest||aiLegacy){
+    if(process.env.AI_ENABLED!=='true')return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini выключена: AI_ENABLED=false. Ничего не записано.');
+    const prompt=(aiTest?.[1]||aiLegacy?.[1]||'добавь два сырника и 200 миллилитров кокосового молока').trim();
+    const result=await parseWithGemini(prompt);
+    if(result.status!=='parsed')return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini: '+result.status+'. Ничего не записано.');
     const items=result.command.items.map(x=>x.name+', '+x.quantity+' '+({g:'граммов',ml:'миллилитров',pcs:'штук',portion:'порций'}[x.unit])).join('; ');
-    return aliceResponse(req,'Нейросеть распознала: '+items+'. Ничего не записано.');
+    return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini распознала: '+items+'. Ничего не записано.');
   }
   let stage='parse_command';
   try {
