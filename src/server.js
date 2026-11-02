@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.16-gemini-models-20261102';
+const BUILD='0.4.17-gemini-errors-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
