@@ -111,7 +111,8 @@ async function handleCore(req) {
     // Durable saved-dish confirmation: works across new Alice sessions.
     if(/^(да|подтверждаю|верно|нет|отмена|отмени)$/iu.test(phrase.trim())){
       stage='check_saved_dish_confirmation';
-      const pending=await fitnessTools.pendingSavedDish(id);
+      let pending=null;
+      try{pending=await fitnessTools.pendingSavedDish(id)}catch(error){console.info('[FS-Voice]',BUILD,'saved_dish_lookup_unavailable',error.message)}
       if(pending?.status==='dish_pending'){
         if(/^(нет|отмена|отмени)$/iu.test(phrase.trim())){
           await fitnessTools.cancelSavedDish(id);
@@ -127,7 +128,7 @@ async function handleCore(req) {
       if(pending?.status==='dish_consumed'&&/^(да|подтверждаю|верно)$/iu.test(phrase.trim()))return aliceResponse(req,'Это блюдо уже добавлено. Повторно не записываю.');
     }
     const savedDishCommand=stripRecipient(phrase).trim().match(/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)\s+(?:мне\s+)?(?:блюдо\s+)?(.+?)(?:\s+в\s+(?:мой\s+)?дневник)?[.!?\s]*$/iu);
-    if(savedDishCommand){
+    if(savedDishCommand && !parsedCommand){
       const dishName=savedDishCommand[1].trim();
       const owners=namedRecipientMatch(phrase)?recipientOf(phrase):members;
       if(owners.length===1){
