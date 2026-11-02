@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {parseDate,nutritionForDay,speak,intent,targetsFromSite,parseFoodBatch} from '../src/core.js';
+import {parseDate,nutritionForDay,speak,intent,targetsFromSite,parseFoodBatch,convertFoodQuantity} from '../src/core.js';
 const rows=[['Дата','Вес','Ккал','Белки','Жиры','Углеводы'],['26.10.2026','','1502,3','73,32','38,26','226,2']];
 const targets={kcal:2370,protein:190,fat:70,carbs:245};
 test('Russian date and decimal commas',()=>{assert.equal(parseDate('26.10.2026'),'2026-10-26');assert.equal(nutritionForDay(rows,'2026-10-26').consumed.protein,73.32)});
@@ -18,4 +18,9 @@ test('implicit pieces and spoken numbers',()=>{
     assert.equal(result.items[0].grams,count);
     assert.equal(result.items[0].name,name);
   }
+});
+
+test('explicit one piece per portion conversion',()=>{
+  assert.deepEqual(convertFoodQuantity({amount:2,unit:'pcs'},{source_extra:{voice_unit:'portion',voice_basis_amount:1,pieces_per_portion:1}}),{basisAmount:2,multiplier:2});
+  assert.equal(convertFoodQuantity({amount:2,unit:'pcs'},{source_extra:{voice_unit:'portion',voice_basis_amount:1}}),null);
 });
