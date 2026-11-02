@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.19-yandex-fallback-20261102';
+const BUILD='0.4.20-yandex-missing-amount-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -413,8 +413,8 @@ async function handleCore(req) {
     // AI fallback only for explicit food-writing requests the deterministic parser did not understand.
     // Existing durable confirmation, owner selection and product resolution remain authoritative.
     let command=parsedCommand;
-    if(!command&&process.env.AI_ENABLED==='true'&&process.env.YANDEX_AI_API_KEY&&process.env.YANDEX_FOLDER_ID
-       &&/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)\b/iu.test(phrase.trim())){
+    if((!command||command.status==='missing_amount'||command.status==='invalid')&&process.env.AI_ENABLED==='true'&&process.env.YANDEX_AI_API_KEY&&process.env.YANDEX_FOLDER_ID
+       &&/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)(?=\s|$)/iu.test(phrase.trim())){
       stage='parse_yandex_fallback';
       const ai=await parseWithYandex(stripRecipient(phrase));
       if(ai.status==='parsed'){
