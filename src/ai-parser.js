@@ -73,3 +73,32 @@ export async function listGeminiModels({fetchImpl=globalThis.fetch,apiKey=proces
     return {status:'unavailable',reason:error?.name==='AbortError'?'timeout':error?.cause?.code==='ENOTFOUND'?'dns_failed':'network_error'};
   }finally{clearTimeout(timer)}
 }
+
+export async function parseWithYandex(phrase,{fetchImpl=globalThis.fetch,apiKey=process.env.YANDEX_AI_API_KEY,folderId=process.env.YANDEX_FOLDER_ID,model=process.env.YANDEX_AI_MODEL||'yandexgpt-5.1',timeoutMs=8000}={}){
+  if(process.env.AI_ENABLED!=='true')return {status:'disabled'};
+  if(!apiKey||!folderId)return {status:'missing_config'};
+  if(typeof phrase!=='string'||phrase.length<2||phrase.length>1200||!MODEL_RE.test(model)||!/^[a-zA-Z0-9_-]+$/.test(folderId))return {status:'invalid_input'};
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const response=await fetchImpl('https://ai.api.cloud.yandex.net/v1/chat/completions',{
+      method:'POST',signal:controller.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Api-Key '+apiKey,'OpenAI-Project':folderId},
+      body:JSON.stringify({
+        model:'gpt://'+folderId+'/'+model,
+        messages:[
+          {role:'system',content:'Извлеки команду добавления питания из русской фразы. Ответь только валидным JSON объектом с полями intent, meal, items. intent=add_food; meal: Завтрак, Обед, Ужин, Перекус или null; items: массив объектов {name,quantity,unit}, unit только g, ml, pcs, portion. Не придумывай количество или единицы. Если запрос не о записи питания или количества нет, верни {"intent":"unsupported","meal":null,"items":[]}. Не вычисляй КБЖУ и не утверждай, что запись сохранена.'},
+          {role:'user',content:phrase}
+        ],temperature:0,max_tokens:400,stream:false
+      })
+    });
+    if(!response.ok)return {status:'unavailable',httpStatus:response.status};
+    const payload=await response.json();
+    let raw=payload?.choices?.[0]?.message?.content;
+    if(typeof raw!=='string')return {status:'invalid_response'};
+    raw=raw.trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,'');
+    const command=validateAiFoodCommand(JSON.parse(raw));
+    return command?{status:'parsed',command}:{status:'unsupported'};
+  }catch(error){return {status:'unavailable',reason:error?.name==='AbortError'?'timeout':error instanceof SyntaxError?'invalid_json':'network_error'}}
+  finally{clearTimeout(timer)}
+}
