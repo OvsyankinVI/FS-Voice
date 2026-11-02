@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.28-catalog-units-20261102';
+const BUILD='0.4.29-fix-clarification-regex-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -268,7 +268,7 @@ async function handleCore(req) {
       if(/^(нет|отмена|отмени)$/iu.test(phrase.trim()))
         {await fitnessTools.clearAiIncomplete(id);return aliceResponse(req,'Отменил. Ничего не записано.',false,{fs_ai_incomplete:null});}
       const answer=phrase.trim().toLocaleLowerCase('ru').replace(/ё/g,'е');
-      const match=answer.match(/^(\\d+(?:[.,]\\d+)?|один|одна|одно|одну|два|две|три|четыре|пять|десять|двести|триста|четыреста|пятьсот)(?:\\s*(мл|миллилитров|миллилитра|миллилитр|г|грамм|граммов|грамма|штук|штуки|штука|шт|порция|порции|порцию|порций|порц))?[.!?]*$/u);
+      const match=answer.match(/^(\d+(?:[.,]\d+)?|один|одна|одно|одну|два|две|три|четыре|пять|десять|двести|триста|четыреста|пятьсот)(?:\s*(мл|миллилитров|миллилитра|миллилитр|г|грамм|граммов|грамма|штук|штуки|штука|шт|порция|порции|порцию|порций|порц))?[.!?]*$/u);
       if(match){
         const words={один:1,одна:1,одно:1,одну:1,два:2,две:2,три:3,четыре:4,пять:5,десять:10,двести:200,триста:300,четыреста:400,пятьсот:500};
         const quantity=words[match[1]]||Number(match[1].replace(',','.'));
