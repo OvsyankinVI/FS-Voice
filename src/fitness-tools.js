@@ -55,7 +55,9 @@ export function rankPersonalFoods(rows,query){
     }
     if(!q.every(word=>words.some(candidate=>inflected(word,candidate))))return null;
     const exact=q.every(word=>words.includes(word));
-    const score=(exact?100:50)+q.length*10-Math.max(0,words.length-q.length)*3;
+    const prefixMatch=q.every(word=>words.some(candidate=>candidate.startsWith(word.slice(0,Math.max(3,word.length-1)))));
+    const firstWordMatch=q.length===1&&inflected(q[0],words[0]);
+    const score=(exact?100:50)+(prefixMatch?12:0)+(firstWordMatch?20:0)+q.length*10-Math.max(0,words.length-q.length)*3;
     return {row,score};
   }).filter(Boolean).sort((a,b)=>b.score-a.score);
   if(!scored.length)return [];
