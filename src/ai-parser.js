@@ -48,7 +48,13 @@ export async function parseWithGemini(phrase,{fetchImpl=globalThis.fetch,apiKey=
     const payload=await response.json();
     const raw=payload?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('');
     if(!raw)return {status:'invalid_response'};
-    const command=validateAiFoodCommand(JSON.parse(raw));
+    const data=JSON.parse(raw);
+    if(data?.intent==='add_food'&&Array.isArray(data.items)&&data.items.length>0&&data.items.length<=12){
+      const missing=data.items.filter(item=>item&&typeof item.name==='string'&&(item.quantity===null||item.quantity===undefined))
+        .map(item=>item.name.trim()).filter(name=>name.length>=2&&name.length<=120);
+      if(missing.length)return {status:'missing_amount',missing};
+    }
+    const command=validateAiFoodCommand(data);
     return command?{status:'parsed',command}:{status:'unsupported'};
   }catch(error){return {status:'unavailable',reason:error?.name==='AbortError'?'timeout':error instanceof SyntaxError?'invalid_json':error?.cause?.code==='ENOTFOUND'?'dns_failed':error?.cause?.code==='ETIMEDOUT'?'network_timeout':'network_error'}}
   finally{clearTimeout(timer)}
@@ -87,7 +93,7 @@ export async function parseWithYandex(phrase,{fetchImpl=globalThis.fetch,apiKey=
       body:JSON.stringify({
         model:'gpt://'+folderId+'/'+model,
         messages:[
-          {role:'system',content:'Извлеки команду добавления питания из русской фразы. Ответь только валидным JSON объектом с полями intent, meal, items. intent=add_food; meal: Завтрак, Обед, Ужин, Перекус или null; items: массив объектов {name,quantity,unit}, unit только g, ml, pcs, portion. Не придумывай количество или единицы. Если запрос не о записи питания или количества нет, верни {"intent":"unsupported","meal":null,"items":[]}. Не вычисляй КБЖУ и не утверждай, что запись сохранена.'},
+          {role:'system',content:'Извлеки команду добавления питания из русской фразы. Ответь только валидным JSON объектом с полями intent, meal, items. intent=add_food; meal: Завтрак, Обед, Ужин, Перекус или null; items: массив объектов {name,quantity,unit}, unit только g, ml, pcs, portion. Не придумывай количество или единицы. Если запрос не о записи питания, верни {"intent":"unsupported","meal":null,"items":[]}. Если для отдельного продукта количество не названо, укажи quantity:null и unit:null именно для этого продукта; остальные продукты сохрани с указанными количествами. Для кофе с молоком без указанного объёма не выдумывай объём. Не вычисляй КБЖУ и не утверждай, что запись сохранена.'},
           {role:'user',content:phrase}
         ],temperature:0,max_tokens:400,stream:false
       })
