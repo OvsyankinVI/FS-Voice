@@ -21,6 +21,7 @@ async function classifyGeminiHttpError(response){
     const body=await response.json();
     const status=String(body?.error?.status||'');
     const message=String(body?.error?.message||'');
+    if(!body?.error)code='non_google_error';
     if(/API_KEY_INVALID|API key not valid/i.test(status+' '+message))code='invalid_api_key';
     else if(/API_KEY_SERVICE_BLOCKED|SERVICE_DISABLED|API has not been used|not enabled/i.test(status+' '+message))code='api_disabled';
     else if(/location is not supported|region|country not supported/i.test(message))code='region_restricted';
@@ -62,7 +63,7 @@ export async function listGeminiModels({fetchImpl=globalThis.fetch,apiKey=proces
     const response=await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models',{
       headers:{'x-goog-api-key':apiKey},signal:controller.signal
     });
-    if(!response.ok)return {status:'unavailable',httpStatus:response.status};
+    if(!response.ok)return await classifyGeminiHttpError(response);
     const data=await response.json();
     const models=(Array.isArray(data.models)?data.models:[])
       .filter(m=>Array.isArray(m.supportedGenerationMethods)&&m.supportedGenerationMethods.includes('generateContent'))
