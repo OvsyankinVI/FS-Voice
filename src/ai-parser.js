@@ -103,7 +103,13 @@ export async function parseWithYandex(phrase,{fetchImpl=globalThis.fetch,apiKey=
     let raw=payload?.choices?.[0]?.message?.content;
     if(typeof raw!=='string')return {status:'invalid_response'};
     raw=raw.trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,'');
-    const command=validateAiFoodCommand(JSON.parse(raw));
+    const data=JSON.parse(raw);
+    if(data?.intent==='add_food'&&Array.isArray(data.items)&&data.items.length>0&&data.items.length<=12){
+      const missing=data.items.filter(item=>item&&typeof item.name==='string'&&(item.quantity===null||item.quantity===undefined))
+        .map(item=>item.name.trim()).filter(name=>name.length>=2&&name.length<=120);
+      if(missing.length)return {status:'missing_amount',missing};
+    }
+    const command=validateAiFoodCommand(data);
     return command?{status:'parsed',command}:{status:'unsupported'};
   }catch(error){return {status:'unavailable',reason:error?.name==='AbortError'?'timeout':error instanceof SyntaxError?'invalid_json':'network_error'}}
   finally{clearTimeout(timer)}
