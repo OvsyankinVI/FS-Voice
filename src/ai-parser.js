@@ -107,7 +107,7 @@ export async function parseWithYandex(phrase,{fetchImpl=globalThis.fetch,apiKey=
     if(data?.intent==='add_food'&&Array.isArray(data.items)&&data.items.length>0&&data.items.length<=12){
       const missing=data.items.filter(item=>item&&typeof item.name==='string'&&(item.quantity===null||item.quantity===undefined))
         .map(item=>item.name.trim()).filter(name=>name.length>=2&&name.length<=120);
-      if(missing.length)return {status:'missing_amount',missing};
+      if(missing.length)return {status:'missing_amount',missing,partial:{meal:data.meal||null,items:data.items}};
     }
     const command=validateAiFoodCommand(data);
     return command?{status:'parsed',command}:{status:'unsupported'};
