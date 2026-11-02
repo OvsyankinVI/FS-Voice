@@ -9,7 +9,7 @@ const sheetId=process.env.SPREADSHEET_ID;
 const siteUrl=process.env.TARGETS_JSON_URL || 'https://ovsyankinvi.github.io/FS/data.json';
 const allowed=(process.env.ALLOWED_ALICE_USER_IDS||'').split(',').map(s=>s.trim()).filter(Boolean);
 const webhookSecret=process.env.ALICE_WEBHOOK_SECRET||'';
-const BUILD='0.4.18-yandex-test-20261102';
+const BUILD='0.4.19-yandex-fallback-20261102';
 const auditContext=new AsyncLocalStorage();
 function diagnostic(stage,error){
   const context=auditContext.getStore();
@@ -410,7 +410,21 @@ async function handleCore(req) {
       }
     }
     if(/^(да|подтверждаю|верно)$/i.test(phrase.trim()))return aliceResponse(req,'Нет ожидающей записи для подтверждения. Назови продукт и массу ещё раз.');
-    const command=parsedCommand;
+    // AI fallback only for explicit food-writing requests the deterministic parser did not understand.
+    // Existing durable confirmation, owner selection and product resolution remain authoritative.
+    let command=parsedCommand;
+    if(!command&&process.env.AI_ENABLED==='true'&&process.env.YANDEX_AI_API_KEY&&process.env.YANDEX_FOLDER_ID
+       &&/^(?:(?:джарвис|пожалуйста)[, ]+)?(?:добавь|запиши|внеси)\b/iu.test(phrase.trim())){
+      stage='parse_yandex_fallback';
+      const ai=await parseWithYandex(stripRecipient(phrase));
+      if(ai.status==='parsed'){
+        const meal=(ai.command.meal||'Перекус').toLocaleLowerCase('ru');
+        command={status:'parsed',items:ai.command.items.map(item=>({
+          name:item.name,grams:item.quantity,unit:item.unit,meal
+        }))};
+        console.info('[FS-Voice]',BUILD,'yandex_fallback_parsed',command.items.length);
+      }else console.info('[FS-Voice]',BUILD,'yandex_fallback',ai.status);
+    }
     if(command){
       if(command.status!=='parsed')return aliceResponse(req,command.status==='too_many'?'За один раз можно добавить не больше десяти продуктов.':command.status==='missing_amount'?'Укажи массу каждого продукта в граммах.':'Проверь название и массу продуктов.');
       if(!members.length)return aliceResponse(req,'В FS нет доступных голосовых профилей.');
