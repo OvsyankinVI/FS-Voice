@@ -100,7 +100,7 @@ async function handleCore(req) {
     if(process.env.AI_ENABLED!=='true')return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini выключена: AI_ENABLED=false. Ничего не записано.');
     const prompt=(aiTest?.[1]||aiLegacy?.[1]||'добавь два сырника и 200 миллилитров кокосового молока').trim();
     const result=await parseWithGemini(prompt);
-    if(result.status!=='parsed')return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini: '+result.status+'. Ничего не записано.');
+    if(result.status!=='parsed')return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini: '+result.status+(result.httpStatus?' (HTTP '+result.httpStatus+')':'')+(result.reason?' ('+result.reason+')':'')+'. Ничего не записано.');
     const items=result.command.items.map(x=>x.name+', '+x.quantity+' '+({g:'граммов',ml:'миллилитров',pcs:'штук',portion:'порций'}[x.unit])).join('; ');
     return aliceResponse(req,'Тест нейросети. Версия '+BUILD+'. Gemini распознала: '+items+'. Ничего не записано.');
   }
