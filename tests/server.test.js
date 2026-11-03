@@ -56,7 +56,7 @@ test('real Yandex Dialogs request reaches food lookup with mocked Supabase',asyn
     const result=await handler({...base,body:JSON.stringify(request)});
     assert.equal(result.statusCode,200);
     const answer=JSON.parse(result.body);
-    assert.match(answer.response.text,/Добавить для Влад/);
+    assert.match(answer.response.text,/Добавляю Владу:/);
     assert.equal(answer.session_state.fs_batch_pending.items[0].grams,100);
     assert.ok(calls.includes('/rest/v1/voice_profiles'));
   } finally {
@@ -93,7 +93,7 @@ test('Alice durable two-turn confirmation without state saves once and can save 
  const send=async(req)=>JSON.parse((await handler({...base,body:JSON.stringify(req)})).body);
  try{
   const first=await send(request('добавь 40 грамм хлеб'));
-  assert.match(first.response.text,/Добавить для Влад/);
+  assert.match(first.response.text,/Добавляю Владу:/);
   assert.ok(first.session_state.fs_batch_pending);
   assert.ok(first.user_state_update.fs_batch_pending);
   assert.equal(saved,0);
